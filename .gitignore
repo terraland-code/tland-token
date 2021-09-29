@@ -19,3 +19,6 @@
 hash.txt
 contracts.txt
 artifacts/
+
+# configuration
+config.ts

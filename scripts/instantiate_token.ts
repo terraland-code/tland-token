@@ -1,11 +1,11 @@
 import {LCDClient, MnemonicKey, MsgInstantiateContract, isTxError} from '@terra-money/terra.js';
+import { config } from './config/config';
 
-const mnemonic = '...';
-const codeId = 9795
+const token_code_id = 9795;
 
 // create a key out of a mnemonic
 const mk = new MnemonicKey({
-    mnemonic: mnemonic,
+    mnemonic: config.mnemonic,
 });
 
 // connect to tequila testnet
@@ -19,7 +19,7 @@ const wallet = terra.wallet(mk);
 async function main() {
     const instantiate = new MsgInstantiateContract(
         wallet.key.accAddress, // owner
-        codeId,
+        token_code_id,
         {
             decimals: 8,
             name: 'FCQplatform.com native token',

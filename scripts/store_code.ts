@@ -1,12 +1,12 @@
 import {isTxError, LCDClient, MnemonicKey, MsgStoreCode} from '@terra-money/terra.js';
-import * as fs from 'fs';
+import { readFileSync } from 'fs';
+import { config } from './config/config';
 
-const mnemonic = '...';
-const scCodePath = '../artifacts/fcqn.wasm'
+const code_path = '../artifacts/fcqn.wasm';
 
 // create a key out of a mnemonic
 const mk = new MnemonicKey({
-    mnemonic: mnemonic,
+    mnemonic: config.mnemonic,
 });
 
 // connect to tequila testnet
@@ -20,7 +20,7 @@ const wallet = terra.wallet(mk);
 async function main() {
     const storeCode = new MsgStoreCode(
         wallet.key.accAddress,
-        fs.readFileSync(scCodePath).toString('base64')
+        readFileSync(code_path).toString('base64')
     );
     const storeCodeTx = await wallet.createAndSignTx({
         msgs: [storeCode],
