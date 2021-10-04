@@ -2,7 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::ops;
 
-use cosmwasm_std::{Coin, StdError, StdResult, Uint128};
+use cosmwasm_std::{Coin, OverflowError, OverflowOperation, StdError, StdResult, Uint128};
 
 // Balance wraps Vec<Coin> and provides some nice helpers. It mutates the Vec and can be
 // unwrapped when done.
@@ -65,7 +65,7 @@ impl NativeBalance {
     }
 
     pub fn is_empty(&self) -> bool {
-        !self.0.iter().any(|x| x.amount != Uint128(0))
+        !self.0.iter().any(|x| x.amount != Uint128::zero())
     }
 
     /// similar to `Balance.sub`, but doesn't fail when minuend less than subtrahend
@@ -75,11 +75,17 @@ impl NativeBalance {
                 if c.amount <= other.amount {
                     self.0.remove(i);
                 } else {
-                    self.0[i].amount = (self.0[i].amount - other.amount)?;
+                    self.0[i].amount = self.0[i].amount.checked_sub(other.amount)?;
                 }
             }
             // error if no tokens
-            None => return Err(StdError::underflow(0, other.amount.u128())),
+            None => {
+                return Err(StdError::overflow(OverflowError::new(
+                    OverflowOperation::Sub,
+                    0,
+                    other.amount.u128(),
+                )))
+            }
         };
         Ok(self)
     }
@@ -132,7 +138,7 @@ impl ops::Sub<Coin> for NativeBalance {
     fn sub(mut self, other: Coin) -> StdResult<Self> {
         match self.find(&other.denom) {
             Some((i, c)) => {
-                let remainder = (c.amount - other.amount)?;
+                let remainder = c.amount.checked_sub(other.amount)?;
                 if remainder.u128() == 0 {
                     self.0.remove(i);
                 } else {
@@ -140,7 +146,13 @@ impl ops::Sub<Coin> for NativeBalance {
                 }
             }
             // error if no tokens
-            None => return Err(StdError::underflow(0, other.amount.u128())),
+            None => {
+                return Err(StdError::overflow(OverflowError::new(
+                    OverflowOperation::Sub,
+                    0,
+                    other.amount.u128(),
+                )))
+            }
         };
         Ok(self)
     }
@@ -190,7 +202,7 @@ mod test {
         );
 
         // add an new coin
-        let add_atom = balance.clone() + coin(777, "ATOM");
+        let add_atom = balance + coin(777, "ATOM");
         assert_eq!(
             add_atom,
             NativeBalance(vec![
@@ -216,10 +228,10 @@ mod test {
             &NativeBalance(vec![coin(900, "ATOM"), coin(555, "BTC"), coin(666, "ETH")])
         );
 
-        let foo = balance + NativeBalance(vec![coin(234, "BTC")]);
+        let sum = balance + NativeBalance(vec![coin(234, "BTC")]);
         assert_eq!(
-            &foo,
-            &NativeBalance(vec![coin(900, "ATOM"), coin(789, "BTC"), coin(666, "ETH")])
+            sum,
+            NativeBalance(vec![coin(900, "ATOM"), coin(789, "BTC"), coin(666, "ETH")])
         );
     }
 
@@ -243,7 +255,7 @@ mod test {
         assert!(underflow.is_err());
 
         // subtract non-existent denom
-        let missing = balance.clone() - coin(1, "ATOM");
+        let missing = balance - coin(1, "ATOM");
         assert!(missing.is_err());
     }
 
@@ -268,7 +280,7 @@ mod test {
         assert_eq!(saturating.unwrap(), NativeBalance(vec![coin(12345, "ETH")]));
 
         // subtract non-existent denom
-        let missing = balance.clone() - coin(1, "ATOM");
+        let missing = balance - coin(1, "ATOM");
         assert!(missing.is_err());
     }
 

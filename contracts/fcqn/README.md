@@ -28,29 +28,19 @@ ls -l fcqn.wasm
 sha256sum fcqn.wasm
 ```
 
-Or for a production-ready (compressed) build, run the following from the
-repository root:
-
-```
-docker run --rm -v "$(pwd)":/code \
-  --mount type=volume,source="$(basename "$(pwd)")_cache",target=/code/target \
-  --mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
-  cosmwasm/workspace-optimizer:0.10.3
-```
-
 The optimized contracts are generated in the `artifacts/` directory.
 
 ## Create contract
 
 ```json
 {
-  "decimals": 8,
+  "decimals": 6,
   "name": "FCQplatform.com native token",
   "symbol": "FCQN",
   "initial_balances": [
     {
       "address": "terra1mtdhy09e9j7x34jrqldsqntazlx00y6v5llf24",
-      "amount": "10000000000000000"
+      "amount": "100000000000000"
     }
   ]
 }

@@ -1,8 +1,9 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use cosmwasm_std::{HumanAddr, Uint128};
+use cosmwasm_std::{Addr, Binary, Uint128};
 
+use crate::logo::LogoInfo;
 use cw0::Expiration;
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
@@ -10,34 +11,41 @@ use cw0::Expiration;
 pub enum Cw20QueryMsg {
     /// Returns the current balance of the given address, 0 if unset.
     /// Return type: BalanceResponse.
-    Balance { address: HumanAddr },
+    Balance { address: String },
     /// Returns metadata on the contract - name, decimals, supply, etc.
     /// Return type: TokenInfoResponse.
     TokenInfo {},
     /// Only with "allowance" extension.
     /// Returns how much spender can use from owner account, 0 if unset.
     /// Return type: AllowanceResponse.
-    Allowance {
-        owner: HumanAddr,
-        spender: HumanAddr,
-    },
+    Allowance { owner: String, spender: String },
     /// Only with "mintable" extension.
-    /// Returns who can mint and how much.
+    /// Returns who can mint and the hard cap on maximum tokens after minting.
     /// Return type: MinterResponse.
     Minter {},
+    /// Only with "marketing" extension
+    /// Returns more metadata on the contract to display in the client:
+    /// - description, logo, project url, etc.
+    /// Return type: MarketingInfoResponse.
+    MarketingInfo {},
+    /// Only with "marketing" extension
+    /// Downloads the embedded logo data (if stored on chain). Errors if no logo data stored for
+    /// this contract.
+    /// Return type: DownloadLogoResponse.
+    DownloadLogo {},
     /// Only with "enumerable" extension (and "allowances")
     /// Returns all allowances this owner has approved. Supports pagination.
     /// Return type: AllAllowancesResponse.
     AllAllowances {
-        owner: HumanAddr,
-        start_after: Option<HumanAddr>,
+        owner: String,
+        start_after: Option<String>,
         limit: Option<u32>,
     },
     /// Only with "enumerable" extension
     /// Returns all accounts that have balances. Supports pagination.
     /// Return type: AllAccountsResponse.
     AllAccounts {
-        start_after: Option<HumanAddr>,
+        start_after: Option<String>,
         limit: Option<u32>,
     },
 }
@@ -63,14 +71,36 @@ pub struct AllowanceResponse {
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
 pub struct MinterResponse {
-    pub minter: HumanAddr,
-    /// cap is how many more tokens can be issued by the minter
+    pub minter: String,
+    /// cap is a hard cap on total supply that can be achieved by minting.
+    /// Note that this refers to total_supply.
+    /// If None, there is unlimited cap.
     pub cap: Option<Uint128>,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug, Default)]
+pub struct MarketingInfoResponse {
+    /// A URL pointing to the project behind this token.
+    pub project: Option<String>,
+    /// A longer description of the token and it's utility. Designed for tooltips or such
+    pub description: Option<String>,
+    /// A link to the logo, or a comment there is an on-chain logo stored
+    pub logo: Option<LogoInfo>,
+    /// The address (if any) who can update this data structure
+    pub marketing: Option<Addr>,
+}
+
+/// When we download an embedded logo, we get this response type.
+/// We expect a SPA to be able to accept this info and display it.
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+pub struct DownloadLogoResponse {
+    pub mime_type: String,
+    pub data: Binary,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
 pub struct AllowanceInfo {
-    pub spender: HumanAddr,
+    pub spender: String,
     pub allowance: Uint128,
     pub expires: Expiration,
 }
@@ -82,5 +112,5 @@ pub struct AllAllowancesResponse {
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug, Default)]
 pub struct AllAccountsResponse {
-    pub accounts: Vec<HumanAddr>,
+    pub accounts: Vec<String>,
 }

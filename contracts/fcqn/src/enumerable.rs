@@ -1,33 +1,31 @@
-use cosmwasm_std::{
-    Api, CanonicalAddr, Extern, HumanAddr, Order, Querier, ReadonlyStorage, StdResult, Storage,
-};
-use cw0::calc_range_start_human;
+use cosmwasm_std::{Deps, Order, StdResult};
 use cw20::{AllAccountsResponse, AllAllowancesResponse, AllowanceInfo};
 
-use crate::state::{allowances_read, balances_prefix_read};
+use crate::state::{ALLOWANCES, BALANCES};
+use cw_storage_plus::Bound;
 
 // settings for pagination
 const MAX_LIMIT: u32 = 30;
 const DEFAULT_LIMIT: u32 = 10;
 
-pub fn query_all_allowances<S: Storage, A: Api, Q: Querier>(
-    deps: &Extern<S, A, Q>,
-    owner: HumanAddr,
-    start_after: Option<HumanAddr>,
+pub fn query_all_allowances(
+    deps: Deps,
+    owner: String,
+    start_after: Option<String>,
     limit: Option<u32>,
 ) -> StdResult<AllAllowancesResponse> {
-    let owner_raw = deps.api.canonical_address(&owner)?;
+    let owner_addr = deps.api.addr_validate(&owner)?;
     let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
-    let start = calc_range_start_human(deps.api, start_after)?;
-    let api = &deps.api;
+    let start = start_after.map(Bound::exclusive);
 
-    let allowances: StdResult<Vec<AllowanceInfo>> = allowances_read(&deps.storage, &owner_raw)
-        .range(start.as_deref(), None, Order::Ascending)
+    let allowances: StdResult<Vec<AllowanceInfo>> = ALLOWANCES
+        .prefix(&owner_addr)
+        .range(deps.storage, start, None, Order::Ascending)
         .take(limit)
         .map(|item| {
             let (k, v) = item?;
             Ok(AllowanceInfo {
-                spender: api.human_address(&CanonicalAddr::from(k))?,
+                spender: String::from_utf8(k)?,
                 allowance: v.allowance,
                 expires: v.expires,
             })
@@ -38,19 +36,18 @@ pub fn query_all_allowances<S: Storage, A: Api, Q: Querier>(
     })
 }
 
-pub fn query_all_accounts<S: Storage, A: Api, Q: Querier>(
-    deps: &Extern<S, A, Q>,
-    start_after: Option<HumanAddr>,
+pub fn query_all_accounts(
+    deps: Deps,
+    start_after: Option<String>,
     limit: Option<u32>,
 ) -> StdResult<AllAccountsResponse> {
     let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
-    let start = calc_range_start_human(deps.api, start_after)?;
-    let api = &deps.api;
+    let start = start_after.map(Bound::exclusive);
 
-    let accounts: StdResult<Vec<_>> = balances_prefix_read(&deps.storage)
-        .range(start.as_deref(), None, Order::Ascending)
+    let accounts: Result<Vec<_>, _> = BALANCES
+        .keys(deps.storage, start, None, Order::Ascending)
+        .map(String::from_utf8)
         .take(limit)
-        .map(|(k, _)| api.human_address(&CanonicalAddr::from(k)))
         .collect();
 
     Ok(AllAccountsResponse {
@@ -62,148 +59,157 @@ pub fn query_all_accounts<S: Storage, A: Api, Q: Querier>(
 mod tests {
     use super::*;
 
-    use cosmwasm_std::testing::{mock_dependencies, mock_env};
-    use cosmwasm_std::{coins, Uint128};
-    use cw20::{Cw20CoinHuman, Expiration, TokenInfoResponse};
+    use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
+    use cosmwasm_std::{coins, DepsMut, Uint128};
+    use cw20::{Cw20Coin, Expiration, TokenInfoResponse};
 
-    use crate::contract::{handle, init, query_token_info};
-    use crate::msg::{HandleMsg, InitMsg};
+    use crate::contract::{execute, instantiate, query_token_info};
+    use crate::msg::{ExecuteMsg, InstantiateMsg};
 
-    // this will set up the init for other tests
-    fn do_init<S: Storage, A: Api, Q: Querier>(
-        deps: &mut Extern<S, A, Q>,
-        addr: &HumanAddr,
-        amount: Uint128,
-    ) -> TokenInfoResponse {
-        let init_msg = InitMsg {
+    // this will set up the instantiation for other tests
+    fn do_instantiate(mut deps: DepsMut, addr: &str, amount: Uint128) -> TokenInfoResponse {
+        let instantiate_msg = InstantiateMsg {
             name: "Auto Gen".to_string(),
             symbol: "AUTO".to_string(),
             decimals: 3,
-            initial_balances: vec![Cw20CoinHuman {
+            initial_balances: vec![Cw20Coin {
                 address: addr.into(),
                 amount,
             }],
             mint: None,
+            marketing: None,
         };
-        let env = mock_env(&HumanAddr("creator".to_string()), &[]);
-        init(deps, env, init_msg).unwrap();
-        query_token_info(&deps).unwrap()
+        let info = mock_info("creator", &[]);
+        let env = mock_env();
+        instantiate(deps.branch(), env, info, instantiate_msg).unwrap();
+        query_token_info(deps.as_ref()).unwrap()
     }
 
     #[test]
     fn query_all_allowances_works() {
-        let mut deps = mock_dependencies(20, &coins(2, "token"));
+        let mut deps = mock_dependencies(&coins(2, "token"));
 
-        let owner = HumanAddr::from("owner");
-        // these are in alphabetical order different than insert order
-        let spender1 = HumanAddr::from("later");
-        let spender2 = HumanAddr::from("earlier");
+        let owner = String::from("owner");
+        // these are in alphabetical order same than insert order
+        let spender1 = String::from("earlier");
+        let spender2 = String::from("later");
 
-        let env = mock_env(owner.clone(), &[]);
-        do_init(&mut deps, &owner, Uint128(12340000));
+        let info = mock_info(owner.as_ref(), &[]);
+        let env = mock_env();
+        do_instantiate(deps.as_mut(), &owner, Uint128::new(12340000));
 
         // no allowance to start
-        let allowances = query_all_allowances(&deps, owner.clone(), None, None).unwrap();
+        let allowances = query_all_allowances(deps.as_ref(), owner.clone(), None, None).unwrap();
         assert_eq!(allowances.allowances, vec![]);
 
         // set allowance with height expiration
-        let allow1 = Uint128(7777);
+        let allow1 = Uint128::new(7777);
         let expires = Expiration::AtHeight(5432);
-        let msg = HandleMsg::IncreaseAllowance {
+        let msg = ExecuteMsg::IncreaseAllowance {
             spender: spender1.clone(),
             amount: allow1,
-            expires: Some(expires.clone()),
+            expires: Some(expires),
         };
-        handle(&mut deps, env.clone(), msg).unwrap();
+        execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
 
         // set allowance with no expiration
-        let allow2 = Uint128(54321);
-        let msg = HandleMsg::IncreaseAllowance {
+        let allow2 = Uint128::new(54321);
+        let msg = ExecuteMsg::IncreaseAllowance {
             spender: spender2.clone(),
             amount: allow2,
             expires: None,
         };
-        handle(&mut deps, env.clone(), msg).unwrap();
+        execute(deps.as_mut(), env, info, msg).unwrap();
 
         // query list gets 2
-        let allowances = query_all_allowances(&deps, owner.clone(), None, None).unwrap();
+        let allowances = query_all_allowances(deps.as_ref(), owner.clone(), None, None).unwrap();
         assert_eq!(allowances.allowances.len(), 2);
 
-        // first one is spender2 ("earlier")
-        let allowances = query_all_allowances(&deps, owner.clone(), None, Some(1)).unwrap();
-        assert_eq!(allowances.allowances.len(), 1);
-        let allow = &allowances.allowances[0];
-        assert_eq!(&allow.spender, &spender2);
-        assert_eq!(&allow.expires, &Expiration::Never {});
-        assert_eq!(&allow.allowance, &allow2);
-
-        // next one is spender1 ("later")
-        let allowances =
-            query_all_allowances(&deps, owner.clone(), Some(spender2), Some(10000)).unwrap();
+        // first one is spender1 (order of CanonicalAddr uncorrelated with String)
+        let allowances = query_all_allowances(deps.as_ref(), owner.clone(), None, Some(1)).unwrap();
         assert_eq!(allowances.allowances.len(), 1);
         let allow = &allowances.allowances[0];
         assert_eq!(&allow.spender, &spender1);
         assert_eq!(&allow.expires, &expires);
         assert_eq!(&allow.allowance, &allow1);
+
+        // next one is spender2
+        let allowances = query_all_allowances(
+            deps.as_ref(),
+            owner,
+            Some(allow.spender.clone()),
+            Some(10000),
+        )
+            .unwrap();
+        assert_eq!(allowances.allowances.len(), 1);
+        let allow = &allowances.allowances[0];
+        assert_eq!(&allow.spender, &spender2);
+        assert_eq!(&allow.expires, &Expiration::Never {});
+        assert_eq!(&allow.allowance, &allow2);
     }
 
     #[test]
     fn query_all_accounts_works() {
-        let mut deps = mock_dependencies(20, &coins(2, "token"));
+        let mut deps = mock_dependencies(&coins(2, "token"));
 
-        // insert order and lexographical order are different
-        let acct1 = HumanAddr::from("acct01");
-        let acct2 = HumanAddr::from("zebra");
-        let acct3 = HumanAddr::from("nice");
-        let acct4 = HumanAddr::from("aaaardvark");
+        // insert order and lexicographical order are different
+        let acct1 = String::from("acct01");
+        let acct2 = String::from("zebra");
+        let acct3 = String::from("nice");
+        let acct4 = String::from("aaaardvark");
         let expected_order = [acct4.clone(), acct1.clone(), acct3.clone(), acct2.clone()];
 
-        do_init(&mut deps, &acct1, Uint128(12340000));
+        do_instantiate(deps.as_mut(), &acct1, Uint128::new(12340000));
 
         // put money everywhere (to create balanaces)
-        let env = mock_env(acct1.clone(), &[]);
-        handle(
-            &mut deps,
+        let info = mock_info(acct1.as_ref(), &[]);
+        let env = mock_env();
+        execute(
+            deps.as_mut(),
             env.clone(),
-            HandleMsg::Transfer {
+            info.clone(),
+            ExecuteMsg::Transfer {
                 recipient: acct2,
-                amount: Uint128(222222),
+                amount: Uint128::new(222222),
             },
         )
-        .unwrap();
-        handle(
-            &mut deps,
+            .unwrap();
+        execute(
+            deps.as_mut(),
             env.clone(),
-            HandleMsg::Transfer {
+            info.clone(),
+            ExecuteMsg::Transfer {
                 recipient: acct3,
-                amount: Uint128(333333),
+                amount: Uint128::new(333333),
             },
         )
-        .unwrap();
-        handle(
-            &mut deps,
-            env.clone(),
-            HandleMsg::Transfer {
+            .unwrap();
+        execute(
+            deps.as_mut(),
+            env,
+            info,
+            ExecuteMsg::Transfer {
                 recipient: acct4,
-                amount: Uint128(444444),
+                amount: Uint128::new(444444),
             },
         )
-        .unwrap();
+            .unwrap();
 
         // make sure we get the proper results
-        let accounts = query_all_accounts(&deps, None, None).unwrap();
-        assert_eq!(accounts.accounts, expected_order.clone());
+        let accounts = query_all_accounts(deps.as_ref(), None, None).unwrap();
+        assert_eq!(accounts.accounts, expected_order);
 
         // let's do pagination
-        let accounts = query_all_accounts(&deps, None, Some(2)).unwrap();
+        let accounts = query_all_accounts(deps.as_ref(), None, Some(2)).unwrap();
         assert_eq!(accounts.accounts, expected_order[0..2].to_vec());
 
         let accounts =
-            query_all_accounts(&deps, Some(accounts.accounts[1].clone()), Some(1)).unwrap();
+            query_all_accounts(deps.as_ref(), Some(accounts.accounts[1].clone()), Some(1)).unwrap();
         assert_eq!(accounts.accounts, expected_order[2..3].to_vec());
 
         let accounts =
-            query_all_accounts(&deps, Some(accounts.accounts[0].clone()), Some(777)).unwrap();
+            query_all_accounts(deps.as_ref(), Some(accounts.accounts[0].clone()), Some(777))
+                .unwrap();
         assert_eq!(accounts.accounts, expected_order[3..].to_vec());
     }
 }

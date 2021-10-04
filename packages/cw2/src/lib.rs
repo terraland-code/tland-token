@@ -1,12 +1,10 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use cosmwasm_std::{
-    HumanAddr, Querier, QueryRequest, ReadonlyStorage, StdResult, Storage, WasmQuery,
-};
-use cosmwasm_storage::{to_length_prefixed, ReadonlySingleton, Singleton};
+use cosmwasm_std::{Querier, QuerierWrapper, QueryRequest, StdResult, Storage, WasmQuery};
+use cw_storage_plus::Item;
 
-pub const PREFIX_INFO: &[u8] = b"contract_info";
+pub const CONTRACT: Item<ContractVersion> = Item::new("contract_info");
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
 pub struct ContractVersion {
@@ -14,28 +12,29 @@ pub struct ContractVersion {
     /// we will use other prefixes for other languages, and their standard global namespacing
     pub contract: String,
     /// version is any string that this implementation knows. It may be simple counter "1", "2".
-    /// or semantic version on release tags "v0.6.2", or some custom feature flag list.
+    /// or semantic version on release tags "v0.7.0", or some custom feature flag list.
     /// the only code that needs to understand the version parsing is code that knows how to
     /// migrate from the given contract (and is tied to it's implementation somehow)
     pub version: String,
 }
 
 /// get_contract_version can be use in migrate to read the previous version of this contract
-pub fn get_contract_version<S: ReadonlyStorage>(storage: &S) -> StdResult<ContractVersion> {
-    ReadonlySingleton::new(storage, PREFIX_INFO).load()
+pub fn get_contract_version(store: &dyn Storage) -> StdResult<ContractVersion> {
+    CONTRACT.load(store)
 }
 
-/// set_contract_version should be used in init to store the original version, and after a successful
+/// set_contract_version should be used in instantiate to store the original version, and after a successful
 /// migrate to update it
-pub fn set_contract_version<S: Storage, T: Into<String>, U: Into<String>>(
-    storage: &mut S,
+pub fn set_contract_version<T: Into<String>, U: Into<String>>(
+    store: &mut dyn Storage,
     name: T,
     version: U,
 ) -> StdResult<()> {
-    Singleton::new(storage, PREFIX_INFO).save(&ContractVersion {
+    let val = ContractVersion {
         contract: name.into(),
         version: version.into(),
-    })
+    };
+    CONTRACT.save(store, &val)
 }
 
 /// This will make a raw_query to another contract to determine the current version it
@@ -43,15 +42,15 @@ pub fn set_contract_version<S: Storage, T: Into<String>, U: Into<String>>(
 /// if the other contract exists and claims to be a cw20-base contract for example.
 /// (Note: you usually want to require *interfaces* not *implementations* of the
 /// contracts you compose with, so be careful of overuse)
-pub fn query_contract_info<Q: Querier, T: Into<HumanAddr>>(
+pub fn query_contract_info<Q: Querier, T: Into<String>>(
     querier: &Q,
     contract_addr: T,
 ) -> StdResult<ContractVersion> {
     let req = QueryRequest::Wasm(WasmQuery::Raw {
         contract_addr: contract_addr.into(),
-        key: to_length_prefixed(PREFIX_INFO).into(),
+        key: CONTRACT.as_slice().into(),
     });
-    querier.query(&req)
+    QuerierWrapper::new(querier).query(&req)
 }
 
 #[cfg(test)]

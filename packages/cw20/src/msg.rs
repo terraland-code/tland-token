@@ -1,31 +1,29 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use cosmwasm_std::{Binary, HumanAddr, Uint128};
+use crate::logo::Logo;
+use cosmwasm_std::{Binary, Uint128};
 use cw0::Expiration;
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
 #[serde(rename_all = "snake_case")]
-pub enum Cw20HandleMsg {
+pub enum Cw20ExecuteMsg {
     /// Transfer is a base message to move tokens to another account without triggering actions
-    Transfer {
-        recipient: HumanAddr,
-        amount: Uint128,
-    },
+    Transfer { recipient: String, amount: Uint128 },
     /// Burn is a base message to destroy tokens forever
     Burn { amount: Uint128 },
     /// Send is a base message to transfer tokens to a contract and trigger an action
     /// on the receiving contract.
     Send {
-        contract: HumanAddr,
+        contract: String,
         amount: Uint128,
-        msg: Option<Binary>,
+        msg: Binary,
     },
     /// Only with "approval" extension. Allows spender to access an additional amount tokens
     /// from the owner's (env.sender) account. If expires is Some(), overwrites current allowance
     /// expiration with this one.
     IncreaseAllowance {
-        spender: HumanAddr,
+        spender: String,
         amount: Uint128,
         expires: Option<Expiration>,
     },
@@ -33,31 +31,41 @@ pub enum Cw20HandleMsg {
     /// from the owner's (env.sender) account by amount. If expires is Some(), overwrites current
     /// allowance expiration with this one.
     DecreaseAllowance {
-        spender: HumanAddr,
+        spender: String,
         amount: Uint128,
         expires: Option<Expiration>,
     },
     /// Only with "approval" extension. Transfers amount tokens from owner -> recipient
     /// if `env.sender` has sufficient pre-approval.
     TransferFrom {
-        owner: HumanAddr,
-        recipient: HumanAddr,
+        owner: String,
+        recipient: String,
         amount: Uint128,
     },
     /// Only with "approval" extension. Sends amount tokens from owner -> contract
     /// if `env.sender` has sufficient pre-approval.
     SendFrom {
-        owner: HumanAddr,
-        contract: HumanAddr,
+        owner: String,
+        contract: String,
         amount: Uint128,
-        msg: Option<Binary>,
+        msg: Binary,
     },
     /// Only with "approval" extension. Destroys tokens forever
-    BurnFrom { owner: HumanAddr, amount: Uint128 },
+    BurnFrom { owner: String, amount: Uint128 },
     /// Only with the "mintable" extension. If authorized, creates amount new tokens
     /// and adds to the recipient balance.
-    Mint {
-        recipient: HumanAddr,
-        amount: Uint128,
+    Mint { recipient: String, amount: Uint128 },
+    /// Only with the "marketing" extension. If authorized, updates marketing metadata.
+    /// Setting None/null for any of these will leave it unchanged.
+    /// Setting Some("") will clear this field on the contract storage
+    UpdateMarketing {
+        /// A URL pointing to the project behind this token.
+        project: Option<String>,
+        /// A longer description of the token and it's utility. Designed for tooltips or such
+        description: Option<String>,
+        /// The address (if any) who can update this data structure
+        marketing: Option<String>,
     },
+    /// If set as the "marketing" role on the contract, upload a new URL, SVG, or PNG for the token
+    UploadLogo(Logo),
 }

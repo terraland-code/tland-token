@@ -1,7 +1,7 @@
 import {LCDClient, MnemonicKey, MsgInstantiateContract, isTxError} from '@terra-money/terra.js';
 import { config } from './config/config';
 
-const token_code_id = 9795;
+const token_code_id = 11064;
 
 // create a key out of a mnemonic
 const mk = new MnemonicKey({
@@ -10,31 +10,29 @@ const mk = new MnemonicKey({
 
 // connect to tequila testnet
 const terra = new LCDClient({
-    URL: 'https://tequila-lcd.terra.dev',
-    chainID: 'tequila-0004'
+    URL: 'https://bombay-lcd.terra.dev',
+    chainID: 'bombay-12'
 });
 
 const wallet = terra.wallet(mk);
 
 async function main() {
     const instantiate = new MsgInstantiateContract(
-        wallet.key.accAddress, // owner
+        wallet.key.accAddress, // sender
+        undefined, // admin
         token_code_id,
         {
-            decimals: 8,
+            decimals: 6,
             name: 'FCQplatform.com native token',
             symbol: 'FCQN',
             initial_balances: [
                 {
                     address: 'terra1mtdhy09e9j7x34jrqldsqntazlx00y6v5llf24',
-                    amount: '10000000000000000'
+                    amount: '100000000000000'
                 }
             ]
         }, // InitMsg
         undefined, // init coins
-        true, // migratable
-        undefined, // sender
-        undefined // admin
     );
 
     const instantiateTx = await wallet.createAndSignTx({

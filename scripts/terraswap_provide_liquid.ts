@@ -1,8 +1,8 @@
 import {LCDClient, MnemonicKey, isTxError, MsgExecuteContract} from '@terra-money/terra.js';
 import { config } from './config/config';
 
-const token_address = "terra1qqnpne27ew4mm3fqt6sqjkjhsy724pyphy8qzf";
-const terraswap_pool_address = "terra1femgl9m3glq9qheryr40ca7ekn73n87ktegjfj";
+const token_address = "terra18nuhtf4ajudu7hvslxf87cw7e4djdejwtqfe6u";
+const terraswap_pool_address = "terra1jh0tjgmqwrml0te43j3s8zxwnr33tj95u44xja";
 
 // create a key out of a mnemonic
 const mk = new MnemonicKey({
@@ -11,8 +11,8 @@ const mk = new MnemonicKey({
 
 // connect to tequila testnet
 const terra = new LCDClient({
-    URL: 'https://tequila-lcd.terra.dev',
-    chainID: 'tequila-0004'
+    URL: 'https://bombay-lcd.terra.dev',
+    chainID: 'bombay-12'
 });
 
 const wallet = terra.wallet(mk);
@@ -23,7 +23,7 @@ async function main() {
         token_address, // contract address
         {
             increase_allowance: {
-                amount: "100000000000",
+                amount: "1000000000",
                 spender: terraswap_pool_address
             }
         },
@@ -42,7 +42,7 @@ async function main() {
                                 contract_addr: token_address
                             }
                         },
-                        amount: "100000000000"
+                        amount: "1000000000"
                     },
                     {
                         info: {

@@ -11,8 +11,8 @@ const mk = new MnemonicKey({
 
 // connect to tequila testnet
 const terra = new LCDClient({
-    URL: 'https://tequila-lcd.terra.dev',
-    chainID: 'tequila-0004'
+    URL: 'https://bombay-lcd.terra.dev',
+    chainID: 'bombay-12',
 });
 
 const wallet = terra.wallet(mk);
