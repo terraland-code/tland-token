@@ -1,0 +1,4 @@
+export const config = {
+  mnemonic: "...",                        // used to create mnemonic key
+}
+
