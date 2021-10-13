@@ -1,7 +1,8 @@
-use cosmwasm_std::{Addr, Binary, BlockInfo, Deps, DepsMut, Env, from_slice, MessageInfo, Order, Response, StdResult, Storage, SubMsg, to_binary, Uint128, WasmMsg};
+use std::ops::Div;
+use cosmwasm_std::{Addr, Binary, Deps, DepsMut, Env, from_slice, MessageInfo, Order, Response, StdError, StdResult, Storage, SubMsg, to_binary, Uint128, WasmMsg};
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cw0::maybe_addr;
+use cw0::{Duration, maybe_addr};
 use cw20::{Balance, Cw20CoinVerified, Cw20ExecuteMsg, Cw20ReceiveMsg};
 use cw2::set_contract_version;
 use cw4::{Member, MemberListResponse, MemberResponse, TotalWeightResponse};
@@ -28,6 +29,8 @@ pub fn instantiate(
         staking_token: msg.staking_token,
         fcqn_token: msg.fcqn_token,
         unbonding_period: msg.unbonding_period,
+        burn_address: msg.burn_address,
+        instant_claim_percentage_loss: msg.instant_claim_percentage_loss,
     };
     CONFIG.save(deps.storage, &config)?;
     TOTAL.save(deps.storage, &0)?;
@@ -46,6 +49,7 @@ pub fn execute(
         ExecuteMsg::Receive(msg) => execute_receive(deps, env, info, msg),
         ExecuteMsg::Unbond { tokens: amount } => execute_unbond(deps, env, info, amount),
         ExecuteMsg::Claim {} => execute_claim(deps, env, info),
+        ExecuteMsg::InstantClaim {} => execute_instant_claim(deps, env, info),
         ExecuteMsg::Withdraw {} => execute_withdraw(deps, info),
     }
 }
@@ -90,7 +94,7 @@ pub fn execute_bond(
                 Err(ContractError::InvalidToken(token.address.to_string()))
             }
         }
-        _ => Err(ContractError::MissedToken{})
+        _ => Err(ContractError::MissedToken {})
     }?;
 
     // update the sender's stake
@@ -180,7 +184,7 @@ pub fn execute_claim(
         return Err(ContractError::NothingToClaim {});
     }
 
-    // create message to transfer stacking tokens
+    // create message to transfer staking tokens
     let config = CONFIG.load(deps.storage)?;
     let transfer = Cw20ExecuteMsg::Transfer {
         recipient: info.sender.clone().into(),
@@ -196,6 +200,64 @@ pub fn execute_claim(
         .add_submessage(message)
         .add_attribute("action", "claim")
         .add_attribute("tokens", coin_to_string(release, config.staking_token.as_str()))
+        .add_attribute("sender", info.sender))
+}
+
+pub fn execute_instant_claim(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+) -> Result<Response, ContractError> {
+    let config = CONFIG.load(deps.storage)?;
+
+    // Create block after unbonding_period to be able to release all claims
+    let mut block = env.block.clone();
+    match config.unbonding_period {
+        Duration::Height(v) => { block.height = block.height + v; }
+        Duration::Time(v) => { block.time = block.time.plus_seconds(v); }
+    };
+
+    // get amount of tokens to release
+    let mut release = CLAIMS.claim_tokens(deps.storage, &info.sender, &block, None)?;
+    if release.is_zero() {
+        return Err(ContractError::NothingToClaim {});
+    }
+
+    // calculate fee for instant claim
+    let fee = release
+        .checked_mul(Uint128::from(config.instant_claim_percentage_loss))
+        .map_err(StdError::overflow)?
+        .div(Uint128::new(100));
+    release = release.checked_sub(fee)
+        .map_err(StdError::overflow)?;
+
+    // create message to release staking tokens to owner
+    let transfer = Cw20ExecuteMsg::Transfer {
+        recipient: info.sender.clone().into(),
+        amount: release,
+    };
+    let message1 = SubMsg::new(WasmMsg::Execute {
+        contract_addr: config.staking_token.clone().into(),
+        msg: to_binary(&transfer)?,
+        funds: vec![],
+    });
+
+    // create message to transfer fee to burn address
+    let transfer_fee = Cw20ExecuteMsg::Transfer {
+        recipient: config.burn_address.clone().into(),
+        amount: fee,
+    };
+    let message2 = SubMsg::new(WasmMsg::Execute {
+        contract_addr: config.staking_token.clone().into(),
+        msg: to_binary(&transfer_fee)?,
+        funds: vec![],
+    });
+
+    Ok(Response::new()
+        .add_submessages([message1, message2])
+        .add_attribute("action", "instant_claim")
+        .add_attribute("tokens", coin_to_string(release, config.staking_token.as_str()))
+        .add_attribute("fee", coin_to_string(fee, config.staking_token.as_str()))
         .add_attribute("sender", info.sender))
 }
 

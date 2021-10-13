@@ -10,6 +10,8 @@ pub struct InstantiateMsg {
     pub staking_token: String,
     pub fcqn_token: String,
     pub unbonding_period: Duration,
+    pub burn_address: String,
+    pub instant_claim_percentage_loss: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -22,6 +24,8 @@ pub enum ExecuteMsg {
     /// Claim is used to claim your native tokens that you previously "unbonded"
     /// after the contract-defined waiting period (eg. 1 week)
     Claim {},
+    /// Claim without waiting period, but with percentage fee
+    InstantClaim {},
     /// Withdraw reward
     Withdraw {},
 

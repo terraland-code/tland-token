@@ -11,6 +11,8 @@ pub struct Config {
     pub staking_token: String,
     pub fcqn_token: String,
     pub unbonding_period: Duration,
+    pub burn_address: String,
+    pub instant_claim_percentage_loss: u64,
 }
 
 pub const CONFIG: Item<Config> = Item::new("config");
