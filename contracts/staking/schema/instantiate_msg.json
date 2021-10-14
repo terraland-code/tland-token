@@ -3,13 +3,23 @@
   "title": "InstantiateMsg",
   "type": "object",
   "required": [
+    "burn_address",
     "fcqn_token",
+    "instant_claim_percentage_loss",
     "staking_token",
     "unbonding_period"
   ],
   "properties": {
+    "burn_address": {
+      "type": "string"
+    },
     "fcqn_token": {
       "type": "string"
+    },
+    "instant_claim_percentage_loss": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
     },
     "staking_token": {
       "type": "string"

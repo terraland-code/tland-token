@@ -4,6 +4,7 @@ use cw20::Cw20ReceiveMsg;
 pub use cw_controllers::ClaimsResponse;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use crate::state::Snapshot;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
@@ -56,8 +57,8 @@ pub enum QueryMsg {
         address: String,
     },
 
-    /// Return TotalWeightResponse
-    TotalWeight {},
+    /// Return total staked tokens
+    Total {},
     /// Returns MembersListResponse
     ListMembers {
         start_after: Option<String>,
@@ -65,8 +66,12 @@ pub enum QueryMsg {
     },
     /// Returns MemberResponse
     Member {
-        addr: String,
+        address: String,
         at_height: Option<u64>,
+    },
+    /// Withdrawn reward
+    Withdrawn {
+        address: String,
     },
 }
 
@@ -74,4 +79,35 @@ pub enum QueryMsg {
 pub struct StakedResponse {
     pub stake: Uint128,
     pub denom: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+pub struct MemberResponse {
+    pub snapshot: Option<Snapshot>,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+pub struct Member {
+    pub address: String,
+    pub snapshot: Snapshot,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+pub struct MemberListResponse {
+    pub members: Vec<Member>,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+pub struct TotalResponse {
+    pub total: Uint128,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+pub struct RewardResponse {
+    pub reward: Uint128,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+pub struct WithdrawnResponse {
+    pub withdrawn: Uint128,
 }

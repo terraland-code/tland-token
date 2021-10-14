@@ -66,13 +66,13 @@
       "additionalProperties": false
     },
     {
-      "description": "Return TotalWeightResponse",
+      "description": "Return total staked tokens",
       "type": "object",
       "required": [
-        "total_weight"
+        "total"
       ],
       "properties": {
-        "total_weight": {
+        "total": {
           "type": "object"
         }
       },
@@ -130,6 +130,27 @@
               ],
               "format": "uint64",
               "minimum": 0.0
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Withdrawn reward",
+      "type": "object",
+      "required": [
+        "withdrawn"
+      ],
+      "properties": {
+        "withdrawn": {
+          "type": "object",
+          "required": [
+            "address"
+          ],
+          "properties": {
+            "address": {
+              "type": "string"
             }
           }
         }

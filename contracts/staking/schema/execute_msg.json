@@ -37,6 +37,19 @@
       "additionalProperties": false
     },
     {
+      "description": "Claim without waiting period, but with percentage fee",
+      "type": "object",
+      "required": [
+        "instant_claim"
+      ],
+      "properties": {
+        "instant_claim": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
       "description": "Withdraw reward",
       "type": "object",
       "required": [
