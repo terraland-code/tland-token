@@ -100,7 +100,7 @@ pub fn execute_bond(
 
     // update the sender's stake
     let new_stake = STAKE.update(deps.storage, &sender, |stake| -> StdResult<_> {
-        Ok(stake.unwrap_or_default().checked_sub(amount)?)
+        Ok(stake.unwrap_or_default().checked_add(amount)?)
     })?;
 
     update_membership(
