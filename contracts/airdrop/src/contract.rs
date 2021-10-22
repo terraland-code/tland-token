@@ -1,13 +1,13 @@
-use cosmwasm_std::{BankMsg, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult, SubMsg, to_binary, Uint128, WasmMsg, WasmQuery};
+use cosmwasm_std::{Addr, BankMsg, Binary, Deps, DepsMut, Env, MessageInfo, QuerierWrapper, Response, StdError, StdResult, SubMsg, to_binary, Uint128, WasmMsg, WasmQuery};
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
+use cw0::must_pay;
 use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg};
 use cw2::set_contract_version;
-use cw0::must_pay;
 
 use crate::error::ContractError;
-use crate::msg::{ConfigResponse, ExecuteMsg, InstantiateMsg, Member, MemberResponse, QueryMsg};
-use crate::state::{CONFIG, Config, MEMBERS, MemberValues};
+use crate::msg::{ConfigResponse, ExecuteMsg, InstantiateMsg, Member, MemberResponse, MemberStats, Missions, QueryMsg};
+use crate::state::{CONFIG, Config, MEMBERS, MemberAirdrop};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:airdrop";
@@ -88,7 +88,7 @@ pub fn execute_register_members(
 
     for m in members.iter() {
         let address = deps.api.addr_validate(&m.address)?;
-        let val = MemberValues {
+        let val = MemberAirdrop {
             amount: m.amount,
             claimed: m.claimed,
         };
@@ -114,7 +114,6 @@ pub fn execute_claim(
         return Err(ContractError::MemberNotFound {});
     }
 
-    // TODO: calc amount to claim
     let m = member.unwrap();
     let amount = m.amount
         .checked_sub(m.claimed)
@@ -235,7 +234,24 @@ pub fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
 pub fn query_member(deps: Deps, addr: String) -> StdResult<MemberResponse> {
     let addr = deps.api.addr_validate(&addr)?;
     let member = MEMBERS.may_load(deps.storage, &addr)?;
-    Ok(MemberResponse { member })
+    let res = match member {
+        Some(m) => Some(MemberStats {
+            amount: m.amount,
+            claimed: m.claimed,
+            passed_missions: check_missions(&deps.querier, addr)?,
+        }),
+        None => None,
+    };
+    Ok(MemberResponse { member: res })
+}
+
+fn check_missions(querier: &QuerierWrapper, addr: Addr) -> StdResult<Missions> {
+    Ok(Missions {
+        is_in_lp_staking: false,
+        is_in_tland_staking: false,
+        is_registered_on_platform: false,
+        is_property_shareholder: false,
+    })
 }
 
 #[cfg(test)]
