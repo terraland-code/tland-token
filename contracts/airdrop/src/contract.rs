@@ -6,8 +6,8 @@ use cw2::set_contract_version;
 use cw0::must_pay;
 
 use crate::error::ContractError;
-use crate::msg::{ConfigResponse, ExecuteMsg, InstantiateMsg, MemberResponse, QueryMsg};
-use crate::state::{CONFIG, Config, Member, MEMBERS};
+use crate::msg::{ConfigResponse, ExecuteMsg, InstantiateMsg, Member, MemberResponse, QueryMsg};
+use crate::state::{CONFIG, Config, MEMBERS, MemberValues};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:airdrop";
@@ -42,11 +42,7 @@ pub fn execute(
 ) -> Result<Response, ContractError> {
     match msg {
         ExecuteMsg::UpdateConfig { new_owner } => execute_update_config(deps, env, info, new_owner),
-        ExecuteMsg::RegisterMember {
-            address,
-            amount,
-            claimed
-        } => execute_register_member(deps, env, info, address, amount, claimed),
+        ExecuteMsg::RegisterMembers { members } => execute_register_members(deps, env, info, members),
         ExecuteMsg::Claim {} => execute_claim(deps, env, info),
         ExecuteMsg::UstWithdraw { recipient } => execute_ust_withdraw(deps, env, info, recipient),
         ExecuteMsg::TokenWithdraw { token, recipient } => execute_token_withdraw(deps, env, info, token, recipient),
@@ -78,14 +74,11 @@ pub fn execute_update_config(
         .add_attribute("sender", info.sender))
 }
 
-// TODO: register members !!!
-pub fn execute_register_member(
+pub fn execute_register_members(
     deps: DepsMut,
     _env: Env,
     info: MessageInfo,
-    address: String,
-    amount: Uint128,
-    claimed: Uint128,
+    members: Vec<Member>,
 ) -> Result<Response, ContractError> {
     // authorized owner
     let cfg = CONFIG.load(deps.storage)?;
@@ -93,14 +86,14 @@ pub fn execute_register_member(
         return Err(ContractError::Unauthorized {});
     }
 
-    // validate member address
-    let member_address = deps.api.addr_validate(&address)?;
-
-    let member = Member {
-        amount,
-        claimed,
-    };
-    MEMBERS.save(deps.storage, &member_address, &member)?;
+    for m in members.iter() {
+        let address = deps.api.addr_validate(&m.address)?;
+        let val = MemberValues {
+            amount: m.amount,
+            claimed: m.claimed,
+        };
+        MEMBERS.save(deps.storage, &address, &val)?;
+    }
 
     Ok(Response::new()
         .add_attribute("action", "register_member")

@@ -2,7 +2,7 @@ use cosmwasm_std::Uint128;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::state::Member;
+use crate::state::MemberValues;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
@@ -17,10 +17,8 @@ pub enum ExecuteMsg {
         new_owner: String,
     },
     Claim {},
-    RegisterMember {
-        address: String,
-        amount: Uint128,
-        claimed: Uint128,
+    RegisterMembers {
+        members: Vec<Member>
     },
     UstWithdraw {
         recipient: String,
@@ -41,8 +39,15 @@ pub enum QueryMsg {
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+pub struct Member {
+    pub address: String,
+    pub amount: Uint128,
+    pub claimed: Uint128,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
 pub struct MemberResponse {
-    pub member: Option<Member>,
+    pub member: Option<MemberValues>,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]

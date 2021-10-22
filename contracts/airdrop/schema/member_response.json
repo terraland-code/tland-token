@@ -6,7 +6,7 @@
     "member": {
       "anyOf": [
         {
-          "$ref": "#/definitions/Member"
+          "$ref": "#/definitions/MemberValues"
         },
         {
           "type": "null"
@@ -15,7 +15,7 @@
     }
   },
   "definitions": {
-    "Member": {
+    "MemberValues": {
       "type": "object",
       "required": [
         "amount",

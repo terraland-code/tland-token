@@ -11,10 +11,10 @@ pub struct Config {
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-pub struct Member {
+pub struct MemberValues {
     pub amount: Uint128,
     pub claimed: Uint128,
 }
 
 pub const CONFIG: Item<Config> = Item::new("config");
-pub const MEMBERS: Map<&Addr, Member> = Map::new("members");
+pub const MEMBERS: Map<&Addr, MemberValues> = Map::new("members");
