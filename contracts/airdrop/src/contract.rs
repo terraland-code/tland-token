@@ -6,8 +6,8 @@ use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg};
 use cw2::set_contract_version;
 
 use crate::error::ContractError;
-use crate::msg::{ConfigResponse, ExecuteMsg, InstantiateMsg, Member, MemberResponse, MemberStats, Missions, QueryMsg};
-use crate::state::{CONFIG, Config, MEMBERS, MemberAirdrop};
+use crate::msg::{ExecuteMsg, InstantiateMissionSmartContracts, InstantiateMsg, MemberResponse, MemberStats, Missions, NewMember, QueryMsg};
+use crate::state::{CONFIG, Config, Member, MEMBERS, MissionSmartContracts};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:airdrop";
@@ -22,15 +22,41 @@ pub fn instantiate(
 ) -> Result<Response, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
-    let owner = deps.api.addr_validate(&msg.owner)?;
-
     let config = Config {
-        owner,
+        owner: deps.api.addr_validate(&msg.owner)?,
         terraland_token: deps.api.addr_validate(&msg.terraland_token)?,
+        mission_smart_contracts: mission_smart_contracts_from(&deps, msg.mission_smart_contracts)?,
     };
+
     CONFIG.save(deps.storage, &config)?;
 
     Ok(Response::default())
+}
+
+fn mission_smart_contracts_from(deps: &DepsMut, m :Option<InstantiateMissionSmartContracts>) -> StdResult<MissionSmartContracts> {
+    let res = match m {
+        Some(m) => MissionSmartContracts {
+            lp_staking: option_addr_validate(&deps, &m.lp_staking)?,
+            tland_staking: option_addr_validate(&deps, &m.tland_staking)?,
+            property_shareholders: option_addr_validate(&deps, &m.property_shareholders)?,
+            platform_users: option_addr_validate(&deps, &m.platform_users)?,
+        },
+        None => MissionSmartContracts {
+            lp_staking: None,
+            tland_staking: None,
+            property_shareholders: None,
+            platform_users: None,
+        },
+    };
+    Ok(res)
+}
+
+fn option_addr_validate(deps: &DepsMut, value: &Option<String>) -> StdResult<Option<Addr>> {
+    let v = match value {
+        Some(str) => Some(deps.api.addr_validate(&str)?),
+        None => None,
+    };
+    Ok(v)
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -41,7 +67,8 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::UpdateConfig { new_owner } => execute_update_config(deps, env, info, new_owner),
+        ExecuteMsg::UpdateConfig { new_owner, mission_smart_contracts } =>
+            execute_update_config(deps, env, info, new_owner, mission_smart_contracts),
         ExecuteMsg::RegisterMembers { members } => execute_register_members(deps, env, info, members),
         ExecuteMsg::Claim {} => execute_claim(deps, env, info),
         ExecuteMsg::UstWithdraw { recipient } => execute_ust_withdraw(deps, env, info, recipient),
@@ -53,7 +80,8 @@ pub fn execute_update_config(
     deps: DepsMut,
     _env: Env,
     info: MessageInfo,
-    new_owner: String,
+    new_owner: Option<String>,
+    new_mission_smart_contracts: Option<InstantiateMissionSmartContracts>,
 ) -> Result<Response, ContractError> {
     // authorized owner
     let cfg = CONFIG.load(deps.storage)?;
@@ -61,11 +89,31 @@ pub fn execute_update_config(
         return Err(ContractError::Unauthorized {});
     }
 
-    // validate new owner address
-    let tmp_owner = deps.api.addr_validate(&new_owner)?;
+    let owner = option_addr_validate(&deps, &new_owner)?;
+    let mission_sc = mission_smart_contracts_from(&deps, new_mission_smart_contracts)?;
 
     CONFIG.update(deps.storage, |mut exists| -> StdResult<_> {
-        exists.owner = tmp_owner;
+        // update new owner if set
+        if let Some(addr) = owner {
+            exists.owner = addr
+        }
+        // update new lp_staking address if set
+        if mission_sc.lp_staking.is_some() {
+            exists.mission_smart_contracts.lp_staking = mission_sc.lp_staking
+        }
+        // update new tland_staking address if set
+        if mission_sc.tland_staking.is_some() {
+            exists.mission_smart_contracts.tland_staking = mission_sc.tland_staking
+        }
+        // update new platform_users address if set
+        if mission_sc.platform_users.is_some() {
+            exists.mission_smart_contracts.platform_users = mission_sc.platform_users
+        }
+        // update new property_shareholders address if set
+        if mission_sc.property_shareholders.is_some() {
+            exists.mission_smart_contracts.property_shareholders = mission_sc.property_shareholders
+        }
+
         Ok(exists)
     })?;
 
@@ -78,7 +126,7 @@ pub fn execute_register_members(
     deps: DepsMut,
     _env: Env,
     info: MessageInfo,
-    members: Vec<Member>,
+    members: Vec<NewMember>,
 ) -> Result<Response, ContractError> {
     // authorized owner
     let cfg = CONFIG.load(deps.storage)?;
@@ -88,7 +136,7 @@ pub fn execute_register_members(
 
     for m in members.iter() {
         let address = deps.api.addr_validate(&m.address)?;
-        let val = MemberAirdrop {
+        let val = Member {
             amount: m.amount,
             claimed: m.claimed,
         };
@@ -223,18 +271,15 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     }
 }
 
-pub fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
+pub fn query_config(deps: Deps) -> StdResult<Config> {
     let cfg = CONFIG.load(deps.storage)?;
-    Ok(ConfigResponse {
-        owner: cfg.owner.to_string(),
-        terraland_token: cfg.terraland_token.to_string(),
-    })
+    Ok(cfg)
 }
 
 pub fn query_member(deps: Deps, addr: String) -> StdResult<MemberResponse> {
     let addr = deps.api.addr_validate(&addr)?;
     let member = MEMBERS.may_load(deps.storage, &addr)?;
-    let res = match member {
+    let stats = match member {
         Some(m) => Some(MemberStats {
             amount: m.amount,
             claimed: m.claimed,
@@ -242,7 +287,7 @@ pub fn query_member(deps: Deps, addr: String) -> StdResult<MemberResponse> {
         }),
         None => None,
     };
-    Ok(MemberResponse { member: res })
+    Ok(MemberResponse { stats })
 }
 
 fn check_missions(querier: &QuerierWrapper, addr: Addr) -> StdResult<Missions> {

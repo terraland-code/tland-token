@@ -3,7 +3,8 @@ use std::fs::create_dir_all;
 
 use cosmwasm_schema::{export_schema, remove_schemas, schema_for};
 
-use airdrop::msg::{MemberResponse, ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg};
+use airdrop::msg::{MemberResponse, ExecuteMsg, InstantiateMsg, QueryMsg};
+use airdrop::state::Config as ConfigResponse;
 
 fn main() {
     let mut out_dir = current_dir().unwrap();

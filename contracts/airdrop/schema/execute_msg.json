@@ -10,12 +10,22 @@
       "properties": {
         "update_config": {
           "type": "object",
-          "required": [
-            "new_owner"
-          ],
           "properties": {
+            "mission_smart_contracts": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/InstantiateMissionSmartContracts"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "new_owner": {
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             }
           }
         }
@@ -49,7 +59,7 @@
             "members": {
               "type": "array",
               "items": {
-                "$ref": "#/definitions/Member"
+                "$ref": "#/definitions/NewMember"
               }
             }
           }
@@ -103,7 +113,36 @@
     }
   ],
   "definitions": {
-    "Member": {
+    "InstantiateMissionSmartContracts": {
+      "type": "object",
+      "properties": {
+        "lp_staking": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "platform_users": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "property_shareholders": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tland_staking": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "NewMember": {
       "type": "object",
       "required": [
         "address",

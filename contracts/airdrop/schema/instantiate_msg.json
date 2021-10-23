@@ -7,11 +7,52 @@
     "terraland_token"
   ],
   "properties": {
+    "mission_smart_contracts": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/InstantiateMissionSmartContracts"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "owner": {
       "type": "string"
     },
     "terraland_token": {
       "type": "string"
+    }
+  },
+  "definitions": {
+    "InstantiateMissionSmartContracts": {
+      "type": "object",
+      "properties": {
+        "lp_staking": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "platform_users": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "property_shareholders": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tland_staking": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
     }
   }
 }

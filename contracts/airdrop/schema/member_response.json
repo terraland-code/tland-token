@@ -3,10 +3,10 @@
   "title": "MemberResponse",
   "type": "object",
   "properties": {
-    "member": {
+    "stats": {
       "anyOf": [
         {
-          "$ref": "#/definitions/MemberValues"
+          "$ref": "#/definitions/MemberStats"
         },
         {
           "type": "null"
@@ -15,11 +15,12 @@
     }
   },
   "definitions": {
-    "MemberValues": {
+    "MemberStats": {
       "type": "object",
       "required": [
         "amount",
-        "claimed"
+        "claimed",
+        "passed_missions"
       ],
       "properties": {
         "amount": {
@@ -27,6 +28,32 @@
         },
         "claimed": {
           "$ref": "#/definitions/Uint128"
+        },
+        "passed_missions": {
+          "$ref": "#/definitions/Missions"
+        }
+      }
+    },
+    "Missions": {
+      "type": "object",
+      "required": [
+        "is_in_lp_staking",
+        "is_in_tland_staking",
+        "is_property_shareholder",
+        "is_registered_on_platform"
+      ],
+      "properties": {
+        "is_in_lp_staking": {
+          "type": "boolean"
+        },
+        "is_in_tland_staking": {
+          "type": "boolean"
+        },
+        "is_property_shareholder": {
+          "type": "boolean"
+        },
+        "is_registered_on_platform": {
+          "type": "boolean"
         }
       }
     },

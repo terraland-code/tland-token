@@ -6,17 +6,27 @@ use serde::{Deserialize, Serialize};
 pub struct InstantiateMsg {
     pub owner: String,
     pub terraland_token: String,
+    pub mission_smart_contracts: Option<InstantiateMissionSmartContracts>
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct InstantiateMissionSmartContracts {
+    pub lp_staking: Option<String>,
+    pub tland_staking: Option<String>,
+    pub property_shareholders: Option<String>,
+    pub platform_users: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
     UpdateConfig {
-        new_owner: String,
+        new_owner: Option<String>,
+        mission_smart_contracts: Option<InstantiateMissionSmartContracts>,
     },
     Claim {},
     RegisterMembers {
-        members: Vec<Member>
+        members: Vec<NewMember>
     },
     UstWithdraw {
         recipient: String,
@@ -37,7 +47,7 @@ pub enum QueryMsg {
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-pub struct Member {
+pub struct NewMember {
     pub address: String,
     pub amount: Uint128,
     pub claimed: Uint128,
@@ -60,11 +70,5 @@ pub struct Missions {
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
 pub struct MemberResponse {
-    pub member: Option<MemberStats>,
-}
-
-#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-pub struct ConfigResponse {
-    pub owner: String,
-    pub terraland_token: String,
+    pub stats: Option<MemberStats>,
 }
