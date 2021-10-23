@@ -1,8 +1,7 @@
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-
 use cosmwasm_std::{Addr, Uint128};
 use cw_storage_plus::{Item, Map};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Config {
@@ -15,8 +14,7 @@ pub struct Config {
 pub struct MissionSmartContracts {
     pub lp_staking: Option<Addr>,
     pub tland_staking: Option<Addr>,
-    pub property_shareholders: Option<Addr>,
-    pub platform_users: Option<Addr>,
+    pub platform_registry: Option<Addr>,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]

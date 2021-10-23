@@ -38,14 +38,12 @@ fn mission_smart_contracts_from(deps: &DepsMut, m :Option<InstantiateMissionSmar
         Some(m) => MissionSmartContracts {
             lp_staking: option_addr_validate(&deps, &m.lp_staking)?,
             tland_staking: option_addr_validate(&deps, &m.tland_staking)?,
-            property_shareholders: option_addr_validate(&deps, &m.property_shareholders)?,
-            platform_users: option_addr_validate(&deps, &m.platform_users)?,
+            platform_registry: option_addr_validate(&deps, &m.platform_registry)?,
         },
         None => MissionSmartContracts {
             lp_staking: None,
             tland_staking: None,
-            property_shareholders: None,
-            platform_users: None,
+            platform_registry: None,
         },
     };
     Ok(res)
@@ -105,13 +103,9 @@ pub fn execute_update_config(
         if mission_sc.tland_staking.is_some() {
             exists.mission_smart_contracts.tland_staking = mission_sc.tland_staking
         }
-        // update new platform_users address if set
-        if mission_sc.platform_users.is_some() {
-            exists.mission_smart_contracts.platform_users = mission_sc.platform_users
-        }
-        // update new property_shareholders address if set
-        if mission_sc.property_shareholders.is_some() {
-            exists.mission_smart_contracts.property_shareholders = mission_sc.property_shareholders
+        // update new platform_registry address if set
+        if mission_sc.platform_registry.is_some() {
+            exists.mission_smart_contracts.platform_registry = mission_sc.platform_registry
         }
 
         Ok(exists)

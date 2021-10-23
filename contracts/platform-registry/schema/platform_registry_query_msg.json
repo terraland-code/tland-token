@@ -3,13 +3,13 @@
   "title": "PlatformRegistryQueryMsg",
   "oneOf": [
     {
-      "description": "Returns whether the address is associated with registered user.",
+      "description": "Returns whether the address is registered and has estate shares",
       "type": "object",
       "required": [
-        "is_registered"
+        "address_base_info"
       ],
       "properties": {
-        "is_registered": {
+        "address_base_info": {
           "type": "object",
           "required": [
             "address"

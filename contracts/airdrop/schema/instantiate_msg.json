@@ -34,13 +34,7 @@
             "null"
           ]
         },
-        "platform_users": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "property_shareholders": {
+        "platform_registry": {
           "type": [
             "string",
             "null"

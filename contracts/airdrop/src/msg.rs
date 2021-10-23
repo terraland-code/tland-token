@@ -13,8 +13,7 @@ pub struct InstantiateMsg {
 pub struct InstantiateMissionSmartContracts {
     pub lp_staking: Option<String>,
     pub tland_staking: Option<String>,
-    pub property_shareholders: Option<String>,
-    pub platform_users: Option<String>,
+    pub platform_registry: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
