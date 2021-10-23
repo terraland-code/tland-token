@@ -1,3 +1,4 @@
+use std::ops::Div;
 use cosmwasm_std::{Addr, BankMsg, Binary, Deps, DepsMut, Env, MessageInfo, QuerierWrapper, Response, StdError, StdResult, SubMsg, to_binary, Uint128, WasmMsg, WasmQuery};
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
@@ -147,24 +148,21 @@ pub fn execute_claim(
     _env: Env,
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
-    let cfg = CONFIG.load(deps.storage)?;
-
     must_pay_fee(&info)?;
 
     let member = MEMBERS.may_load(deps.storage, &info.sender)?;
-    if member.is_none() {
-        return Err(ContractError::MemberNotFound {});
-    }
 
-    let m = member.unwrap();
-    let amount = m.amount
-        .checked_sub(m.claimed)
-        .map_err(StdError::overflow)?;
+    let amount = match member {
+        Some(m) => { Ok(calc_claim_amount(&deps.querier, &info.sender, &m)?) },
+        None => Err(ContractError::MemberNotFound {})
+    }?;
+
     if amount.is_zero() {
         return Err(ContractError::NothingToClaim {});
     }
 
     // create message to transfer terraland tokens
+    let cfg = CONFIG.load(deps.storage)?;
     let transfer = Cw20ExecuteMsg::Transfer {
         recipient: info.sender.clone().into(),
         amount,
@@ -180,6 +178,23 @@ pub fn execute_claim(
         .add_attribute("action", "claim")
         .add_attribute("tokens", format!("{} {}", amount, cfg.terraland_token.as_str()))
         .add_attribute("sender", info.sender))
+}
+
+fn calc_claim_amount(querier: &QuerierWrapper, addr :&Addr, member: &Member) -> StdResult<Uint128> {
+    let missions = check_missions(&querier, &addr)?;
+    let passed_missions_num = get_missions_passed(&missions);
+    let max_passed_missions = Uint128::new(5);
+
+    // amount earned equals amount multiplied by percentage of passed missions
+    let amount_earned = member.amount
+        .checked_mul(Uint128::from(passed_missions_num))
+        .map_err(StdError::overflow)?
+        .div(max_passed_missions);
+
+    // claim amount is amount_earned minus already claimed
+    Ok(amount_earned
+        .checked_sub(member.claimed)
+        .map_err(StdError::overflow)?)
 }
 
 pub fn execute_ust_withdraw(
@@ -277,20 +292,38 @@ pub fn query_member(deps: Deps, addr: String) -> StdResult<MemberResponse> {
         Some(m) => Some(MemberStats {
             amount: m.amount,
             claimed: m.claimed,
-            passed_missions: check_missions(&deps.querier, addr)?,
+            passed_missions: check_missions(&deps.querier, &addr)?,
         }),
         None => None,
     };
     Ok(MemberResponse { stats })
 }
 
-fn check_missions(querier: &QuerierWrapper, addr: Addr) -> StdResult<Missions> {
+fn check_missions(querier: &QuerierWrapper, addr: &Addr) -> StdResult<Missions> {
     Ok(Missions {
         is_in_lp_staking: false,
         is_in_tland_staking: false,
         is_registered_on_platform: false,
         is_property_shareholder: false,
     })
+}
+
+fn get_missions_passed(missions: &Missions) -> u32 {
+    // one mission is always passed
+    let mut passed = 1;
+    if missions.is_in_lp_staking {
+        passed += 1;
+    }
+    if missions.is_in_tland_staking {
+        passed += 1;
+    }
+    if missions.is_registered_on_platform {
+        passed += 1;
+    }
+    if missions.is_property_shareholder {
+        passed += 1;
+    }
+    return passed;
 }
 
 #[cfg(test)]
