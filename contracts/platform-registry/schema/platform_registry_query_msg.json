@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PlatformRegistryQueryMsg",
+  "oneOf": [
+    {
+      "description": "Returns whether the address is associated with registered user.",
+      "type": "object",
+      "required": [
+        "is_registered"
+      ],
+      "properties": {
+        "is_registered": {
+          "type": "object",
+          "required": [
+            "address"
+          ],
+          "properties": {
+            "address": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}
