@@ -1,10 +1,15 @@
 use std::ops::Div;
+
 use cosmwasm_std::{Addr, BankMsg, Binary, Deps, DepsMut, Env, MessageInfo, QuerierWrapper, Response, StdError, StdResult, SubMsg, to_binary, Uint128, WasmMsg, WasmQuery};
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cw0::must_pay;
 use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg};
 use cw2::set_contract_version;
+
+use platform_registry::{PlatformRegistryQueryMsg, AddressBaseInfoResponse};
+use staking::msg::MemberResponse as StakingMemberResponse;
+use staking::msg::QueryMsg as StakingQueryMsg;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMissionSmartContracts, InstantiateMsg, MemberResponse, MemberStats, Missions, NewMember, QueryMsg};
@@ -34,7 +39,7 @@ pub fn instantiate(
     Ok(Response::default())
 }
 
-fn mission_smart_contracts_from(deps: &DepsMut, m :Option<InstantiateMissionSmartContracts>) -> StdResult<MissionSmartContracts> {
+fn mission_smart_contracts_from(deps: &DepsMut, m: Option<InstantiateMissionSmartContracts>) -> StdResult<MissionSmartContracts> {
     let res = match m {
         Some(m) => MissionSmartContracts {
             lp_staking: option_addr_validate(&deps, &m.lp_staking)?,
@@ -129,6 +134,7 @@ pub fn execute_register_members(
         return Err(ContractError::Unauthorized {});
     }
 
+    // save all members with valid address in storage
     for m in members.iter() {
         let address = deps.api.addr_validate(&m.address)?;
         let val = Member {
@@ -148,12 +154,18 @@ pub fn execute_claim(
     _env: Env,
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
+    // sender has to pay 1 UST to claim
     must_pay_fee(&info)?;
 
+    let cfg = CONFIG.load(deps.storage)?;
     let member = MEMBERS.may_load(deps.storage, &info.sender)?;
 
     let amount = match member {
-        Some(m) => { Ok(calc_claim_amount(&deps.querier, &info.sender, &m)?) },
+        Some(m) => {
+            // check missions passed by the sender
+            let missions = check_missions(&deps.querier, &cfg, &info.sender)?;
+            Ok(calc_claim_amount( &missions, &m)?)
+        }
         None => Err(ContractError::MemberNotFound {})
     }?;
 
@@ -162,14 +174,12 @@ pub fn execute_claim(
     }
 
     // create message to transfer terraland tokens
-    let cfg = CONFIG.load(deps.storage)?;
-    let transfer = Cw20ExecuteMsg::Transfer {
-        recipient: info.sender.clone().into(),
-        amount,
-    };
     let message = SubMsg::new(WasmMsg::Execute {
         contract_addr: cfg.terraland_token.clone().into(),
-        msg: to_binary(&transfer)?,
+        msg: to_binary(&Cw20ExecuteMsg::Transfer {
+            recipient: info.sender.clone().into(),
+            amount,
+        })?,
         funds: vec![],
     });
 
@@ -180,9 +190,8 @@ pub fn execute_claim(
         .add_attribute("sender", info.sender))
 }
 
-fn calc_claim_amount(querier: &QuerierWrapper, addr :&Addr, member: &Member) -> StdResult<Uint128> {
-    let missions = check_missions(&querier, &addr)?;
-    let passed_missions_num = get_missions_passed(&missions);
+fn calc_claim_amount(missions : &Missions, member: &Member) -> StdResult<Uint128> {
+    let passed_missions_num = calc_missions_passed(&missions);
     let max_passed_missions = Uint128::new(5);
 
     // amount earned equals amount multiplied by percentage of passed missions
@@ -248,13 +257,12 @@ pub fn execute_token_withdraw(
     let res: BalanceResponse = deps.querier.query(&query)?;
 
     // create message to transfer tokens
-    let transfer = Cw20ExecuteMsg::Transfer {
-        recipient: String::from(deps.api.addr_validate(&recipient)?),
-        amount: res.balance,
-    };
     let message = SubMsg::new(WasmMsg::Execute {
-        contract_addr: token,
-        msg: to_binary(&transfer)?,
+        contract_addr: token_addr.to_string(),
+        msg: to_binary(&Cw20ExecuteMsg::Transfer {
+            recipient: String::from(deps.api.addr_validate(&recipient)?),
+            amount: res.balance,
+        })?,
         funds: vec![],
     });
 
@@ -265,6 +273,7 @@ pub fn execute_token_withdraw(
 }
 
 fn must_pay_fee(info: &MessageInfo) -> Result<(), ContractError> {
+    // check if 1 UST was send
     let amount = must_pay(info, "uust")?;
     if amount != Uint128::new(1000000) {
         return Err(ContractError::InvalidFeeAmount {});
@@ -281,36 +290,83 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
 }
 
 pub fn query_config(deps: Deps) -> StdResult<Config> {
-    let cfg = CONFIG.load(deps.storage)?;
-    Ok(cfg)
+    Ok( CONFIG.load(deps.storage)?)
 }
 
 pub fn query_member(deps: Deps, addr: String) -> StdResult<MemberResponse> {
+    let cfg = CONFIG.load(deps.storage)?;
     let addr = deps.api.addr_validate(&addr)?;
     let member = MEMBERS.may_load(deps.storage, &addr)?;
     let stats = match member {
         Some(m) => Some(MemberStats {
             amount: m.amount,
             claimed: m.claimed,
-            passed_missions: check_missions(&deps.querier, &addr)?,
+            passed_missions: check_missions(&deps.querier, &cfg, &addr)?,
         }),
         None => None,
     };
     Ok(MemberResponse { stats })
 }
 
-fn check_missions(querier: &QuerierWrapper, addr: &Addr) -> StdResult<Missions> {
-    Ok(Missions {
+fn check_missions(querier: &QuerierWrapper, cfg: &Config, addr: &Addr) -> StdResult<Missions> {
+    let mut missions = Missions {
         is_in_lp_staking: false,
         is_in_tland_staking: false,
         is_registered_on_platform: false,
-        is_property_shareholder: false,
-    })
+        is_property_shareholder: false
+    };
+
+    if let Some(contract_addr) = cfg.mission_smart_contracts.lp_staking.clone() {
+        let query = WasmQuery::Smart {
+            contract_addr: contract_addr.to_string(),
+            msg: to_binary(&StakingQueryMsg::Member {
+                address: addr.to_string(),
+                at_height: None,
+            })?,
+        }.into();
+        let res: StakingMemberResponse = querier.query(&query)?;
+        if res.snapshot.is_some() {
+            missions.is_in_lp_staking = true;
+        }
+    }
+
+    if let Some(contract_addr) = cfg.mission_smart_contracts.tland_staking.clone() {
+        let query = WasmQuery::Smart {
+            contract_addr: contract_addr.to_string(),
+            msg: to_binary(&StakingQueryMsg::Member {
+                address: addr.to_string(),
+                at_height: None,
+            })?,
+        }.into();
+        let res: StakingMemberResponse = querier.query(&query)?;
+        if res.snapshot.is_some() {
+            missions.is_in_tland_staking = true;
+        }
+    }
+
+    if let Some(contract_addr) = cfg.mission_smart_contracts.platform_registry.clone() {
+        let query = WasmQuery::Smart {
+            contract_addr: contract_addr.to_string(),
+            msg: to_binary(&PlatformRegistryQueryMsg::AddressBaseInfo{
+                address: addr.to_string(),
+            })?,
+        }.into();
+        let res: AddressBaseInfoResponse = querier.query(&query)?;
+        if res.is_registered {
+            missions.is_registered_on_platform = true;
+        }
+        if res.is_property_shareholder {
+            missions.is_property_shareholder = true;
+        }
+    }
+
+    Ok(missions)
 }
 
-fn get_missions_passed(missions: &Missions) -> u32 {
+fn calc_missions_passed(missions: &Missions) -> u32 {
     // one mission is always passed
     let mut passed = 1;
+
     if missions.is_in_lp_staking {
         passed += 1;
     }
@@ -323,6 +379,7 @@ fn get_missions_passed(missions: &Missions) -> u32 {
     if missions.is_property_shareholder {
         passed += 1;
     }
+
     return passed;
 }
 

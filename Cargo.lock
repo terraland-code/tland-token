@@ -13,8 +13,10 @@ dependencies = [
  "cw0 0.8.1",
  "cw2 0.8.1",
  "cw20 0.8.1",
+ "platform-registry",
  "schemars",
  "serde",
+ "staking",
  "thiserror",
 ]
 

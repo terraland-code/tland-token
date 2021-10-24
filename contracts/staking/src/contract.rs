@@ -322,7 +322,6 @@ fn calc_reward(
     let weight = calc_weight(snapshot, now);
 
     let reward_per_weight = 1000;
-    let reward_per_weight = 1000;
     let reward = Uint128::new((weight * reward_per_weight) as u128);
 
     let withdrawal = WITHDRAWN.may_load(storage, addr)?.unwrap_or_default();

@@ -3,9 +3,8 @@ use std::fs::create_dir_all;
 
 use cosmwasm_schema::{export_schema, remove_schemas, schema_for};
 
-pub use cw4::{MemberListResponse, MemberResponse, TotalWeightResponse};
 pub use staking::msg::{
-    ClaimsResponse, ExecuteMsg, InstantiateMsg, QueryMsg, ReceiveMsg, StakedResponse,
+    ClaimsResponse, ExecuteMsg, InstantiateMsg, QueryMsg, ReceiveMsg, StakedResponse, MemberResponse, MemberListResponse, TotalResponse
 };
 
 fn main() {
@@ -21,7 +20,7 @@ fn main() {
 
     export_schema(&schema_for!(MemberListResponse), &out_dir);
     export_schema(&schema_for!(MemberResponse), &out_dir);
-    export_schema(&schema_for!(TotalWeightResponse), &out_dir);
+    export_schema(&schema_for!(TotalResponse), &out_dir);
     export_schema(&schema_for!(ClaimsResponse), &out_dir);
     export_schema(&schema_for!(StakedResponse), &out_dir);
 }
