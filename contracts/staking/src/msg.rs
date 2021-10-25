@@ -1,11 +1,15 @@
 use cosmwasm_std::Uint128;
 use cw20::Cw20ReceiveMsg;
+use cw_controllers::Claim;
 pub use cw_controllers::ClaimsResponse;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::state::Schedule;
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
+    pub owner: String,
     pub staking_token: String,
     pub terraland_token: String,
     pub unbonding_period: u64,
@@ -15,15 +19,19 @@ pub struct InstantiateMsg {
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-pub struct Schedule {
-    pub amount: Uint128,
-    pub start_time: u64,
-    pub end_time: u64,
+pub struct NewConfig {
+    pub owner: Option<String>,
+    pub unbonding_period: Option<u64>,
+    pub burn_address: Option<String>,
+    pub instant_claim_percentage_loss: Option<u64>,
+    pub distribution_schedule: Option<Vec<Schedule>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
+    /// Update config parameters
+    UpdateConfig ( NewConfig ),
     /// Unbond will start the unbonding process for the given number of tokens.
     /// The sender immediately loses weight from these tokens, and can claim them
     /// back to his wallet after `unbonding_period`
@@ -38,6 +46,16 @@ pub enum ExecuteMsg {
 
     /// This accepts a properly-encoded ReceiveMsg from a cw20 contract
     Receive(Cw20ReceiveMsg),
+
+    /// Withdraw ust from smart contract by owner
+    UstWithdraw {
+        recipient: String,
+    },
+    /// Withdraw tokens from smart contract by owner
+    TokenWithdraw {
+        token: String,
+        recipient: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -50,44 +68,42 @@ pub enum ReceiveMsg {
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
-    /// Claims shows the tokens in process of unbonding for this address
-    Claims {
-        address: String,
-    },
-    /// Show the number of tokens currently staked by this address.
-    Staked {
-        address: String,
-    },
-    /// Show the number of reward to withdraw
-    Reward {
-        address: String,
-    },
+    /// Return config
+    Config {},
 
     /// Return total staked tokens
     Total {},
-    /// Withdrawn reward
-    Withdrawn {
-        address: String,
+
+    /// Return staker info
+    Member { addr: String },
+
+    /// Return stakers
+    ListMembers {
+        start_after: Option<String>,
+        limit: Option<u32>,
     },
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-pub struct StakedResponse {
+pub struct MemberItem {
+    pub address: String,
     pub stake: Uint128,
-    pub denom: String,
+    pub reward: Uint128,
+    pub withdrawn: Uint128,
+    pub claims: Vec<Claim>,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+pub struct MemberResponse {
+    pub member: Option<MemberItem>,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+pub struct MemberListResponse {
+    pub members: Vec<MemberItem>,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
 pub struct TotalResponse {
     pub total: Uint128,
-}
-
-#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-pub struct RewardResponse {
-    pub reward: Uint128,
-}
-
-#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-pub struct WithdrawnResponse {
-    pub withdrawn: Uint128,
 }

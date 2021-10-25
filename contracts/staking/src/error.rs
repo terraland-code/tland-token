@@ -17,4 +17,7 @@ pub enum ContractError {
 
     #[error("Staking closed")]
     StakingClosed {},
+
+    #[error("Unauthorized")]
+    Unauthorized {},
 }
