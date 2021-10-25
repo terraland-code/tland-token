@@ -1,16 +1,12 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "StakedResponse",
+  "title": "WithdrawnResponse",
   "type": "object",
   "required": [
-    "denom",
-    "stake"
+    "withdrawn"
   ],
   "properties": {
-    "denom": {
-      "type": "string"
-    },
-    "stake": {
+    "withdrawn": {
       "$ref": "#/definitions/Uint128"
     }
   },

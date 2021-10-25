@@ -1,18 +1,24 @@
 use cosmwasm_std::Uint128;
-use cw0::Duration;
 use cw20::Cw20ReceiveMsg;
 pub use cw_controllers::ClaimsResponse;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use crate::state::Snapshot;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
     pub staking_token: String,
-    pub fcqn_token: String,
-    pub unbonding_period: Duration,
+    pub terraland_token: String,
+    pub unbonding_period: u64,
     pub burn_address: String,
     pub instant_claim_percentage_loss: u64,
+    pub distribution_schedule: Vec<Schedule>,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+pub struct Schedule {
+    pub amount: Uint128,
+    pub start_time: u64,
+    pub end_time: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -59,16 +65,6 @@ pub enum QueryMsg {
 
     /// Return total staked tokens
     Total {},
-    /// Returns MembersListResponse
-    ListMembers {
-        start_after: Option<String>,
-        limit: Option<u32>,
-    },
-    /// Returns MemberResponse
-    Member {
-        address: String,
-        at_height: Option<u64>,
-    },
     /// Withdrawn reward
     Withdrawn {
         address: String,
@@ -79,22 +75,6 @@ pub enum QueryMsg {
 pub struct StakedResponse {
     pub stake: Uint128,
     pub denom: String,
-}
-
-#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-pub struct MemberResponse {
-    pub snapshot: Option<Snapshot>,
-}
-
-#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-pub struct Member {
-    pub address: String,
-    pub snapshot: Snapshot,
-}
-
-#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-pub struct MemberListResponse {
-    pub members: Vec<Member>,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]

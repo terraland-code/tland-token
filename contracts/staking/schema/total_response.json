@@ -1,16 +1,12 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "StakedResponse",
+  "title": "TotalResponse",
   "type": "object",
   "required": [
-    "denom",
-    "stake"
+    "total"
   ],
   "properties": {
-    "denom": {
-      "type": "string"
-    },
-    "stake": {
+    "total": {
       "$ref": "#/definitions/Uint128"
     }
   },

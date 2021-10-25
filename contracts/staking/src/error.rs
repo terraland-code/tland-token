@@ -14,4 +14,7 @@ pub enum ContractError {
 
     #[error("Missed address")]
     MissedToken {},
+
+    #[error("Staking closed")]
+    StakingClosed {},
 }

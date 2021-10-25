@@ -4,8 +4,10 @@ use std::fs::create_dir_all;
 use cosmwasm_schema::{export_schema, remove_schemas, schema_for};
 
 pub use staking::msg::{
-    ClaimsResponse, ExecuteMsg, InstantiateMsg, QueryMsg, ReceiveMsg, StakedResponse, MemberResponse, MemberListResponse, TotalResponse
+    ClaimsResponse, ExecuteMsg, InstantiateMsg, QueryMsg, ReceiveMsg, StakedResponse, TotalResponse,
+    WithdrawnResponse,
 };
+use staking::msg::RewardResponse;
 
 fn main() {
     let mut out_dir = current_dir().unwrap();
@@ -18,9 +20,9 @@ fn main() {
     export_schema(&schema_for!(QueryMsg), &out_dir);
     export_schema(&schema_for!(ReceiveMsg), &out_dir);
 
-    export_schema(&schema_for!(MemberListResponse), &out_dir);
-    export_schema(&schema_for!(MemberResponse), &out_dir);
     export_schema(&schema_for!(TotalResponse), &out_dir);
     export_schema(&schema_for!(ClaimsResponse), &out_dir);
     export_schema(&schema_for!(StakedResponse), &out_dir);
+    export_schema(&schema_for!(RewardResponse), &out_dir);
+    export_schema(&schema_for!(WithdrawnResponse), &out_dir);
 }

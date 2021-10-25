@@ -1,16 +1,12 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "StakedResponse",
+  "title": "RewardResponse",
   "type": "object",
   "required": [
-    "denom",
-    "stake"
+    "reward"
   ],
   "properties": {
-    "denom": {
-      "type": "string"
-    },
-    "stake": {
+    "reward": {
       "$ref": "#/definitions/Uint128"
     }
   },

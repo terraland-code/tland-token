@@ -79,64 +79,6 @@
       "additionalProperties": false
     },
     {
-      "description": "Returns MembersListResponse",
-      "type": "object",
-      "required": [
-        "list_members"
-      ],
-      "properties": {
-        "list_members": {
-          "type": "object",
-          "properties": {
-            "limit": {
-              "type": [
-                "integer",
-                "null"
-              ],
-              "format": "uint32",
-              "minimum": 0.0
-            },
-            "start_after": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "description": "Returns MemberResponse",
-      "type": "object",
-      "required": [
-        "member"
-      ],
-      "properties": {
-        "member": {
-          "type": "object",
-          "required": [
-            "addr"
-          ],
-          "properties": {
-            "addr": {
-              "type": "string"
-            },
-            "at_height": {
-              "type": [
-                "integer",
-                "null"
-              ],
-              "format": "uint64",
-              "minimum": 0.0
-            }
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    {
       "description": "Withdrawn reward",
       "type": "object",
       "required": [
