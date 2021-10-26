@@ -21,4 +21,5 @@ contracts.txt
 artifacts/
 
 # configuration
-config.ts
+config.json
+*.config.json

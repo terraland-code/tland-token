@@ -3,6 +3,19 @@
   "title": "ExecuteMsg",
   "oneOf": [
     {
+      "description": "Update config parameters",
+      "type": "object",
+      "required": [
+        "update_config"
+      ],
+      "properties": {
+        "update_config": {
+          "$ref": "#/definitions/NewConfig"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
       "description": "Unbond will start the unbonding process for the given number of tokens. The sender immediately loses weight from these tokens, and can claim them back to his wallet after `unbonding_period`",
       "type": "object",
       "required": [
@@ -74,6 +87,52 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "description": "Withdraw ust from smart contract by owner",
+      "type": "object",
+      "required": [
+        "ust_withdraw"
+      ],
+      "properties": {
+        "ust_withdraw": {
+          "type": "object",
+          "required": [
+            "recipient"
+          ],
+          "properties": {
+            "recipient": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Withdraw tokens from smart contract by owner",
+      "type": "object",
+      "required": [
+        "token_withdraw"
+      ],
+      "properties": {
+        "token_withdraw": {
+          "type": "object",
+          "required": [
+            "recipient",
+            "token"
+          ],
+          "properties": {
+            "recipient": {
+              "type": "string"
+            },
+            "token": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
     }
   ],
   "definitions": {
@@ -98,6 +157,71 @@
         },
         "sender": {
           "type": "string"
+        }
+      }
+    },
+    "NewConfig": {
+      "type": "object",
+      "properties": {
+        "burn_address": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "distribution_schedule": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Schedule"
+          }
+        },
+        "instant_claim_percentage_loss": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "owner": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "unbonding_period": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      }
+    },
+    "Schedule": {
+      "type": "object",
+      "required": [
+        "amount",
+        "end_time",
+        "start_time"
+      ],
+      "properties": {
+        "amount": {
+          "$ref": "#/definitions/Uint128"
+        },
+        "end_time": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "start_time": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
         }
       }
     },

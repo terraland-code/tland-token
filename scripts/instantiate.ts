@@ -1,37 +1,29 @@
 import {LCDClient, MnemonicKey, MsgInstantiateContract, isTxError} from '@terra-money/terra.js';
-import { config } from './config/config';
+import {NetworkConfig} from "./config/network/config";
+import {InstantiateConfig} from "./config/instantiate/config";
 
-const token_code_id = 11064;
+let networkConfig: NetworkConfig = require('./config/network/config.json');
+let config: InstantiateConfig = require('./config/instantiate/config.json');
 
 // create a key out of a mnemonic
 const mk = new MnemonicKey({
-    mnemonic: config.mnemonic,
+    mnemonic: networkConfig.mnemonic,
 });
 
 // connect to tequila testnet
 const terra = new LCDClient({
-    URL: 'https://bombay-lcd.terra.dev',
-    chainID: 'bombay-12'
+    URL: networkConfig.url,
+    chainID: networkConfig.chainID,
 });
 
 const wallet = terra.wallet(mk);
 
-async function main() {
+async function Deploy() {
     const instantiate = new MsgInstantiateContract(
         wallet.key.accAddress, // sender
         undefined, // admin
-        token_code_id,
-        {
-            decimals: 6,
-            name: 'FCQplatform.com native token',
-            symbol: 'FCQN',
-            initial_balances: [
-                {
-                    address: 'terra1mtdhy09e9j7x34jrqldsqntazlx00y6v5llf24',
-                    amount: '100000000000000'
-                }
-            ]
-        }, // InitMsg
+        config.codeID,
+        config.msg, // InitMsg
         undefined, // init coins
     );
 
@@ -52,7 +44,7 @@ async function main() {
     console.log(`contract_address: ${contract_address}`)
 }
 
-main()
+Deploy()
     .then(() => process.exit(0))
     .catch((error) => {
         console.error(error);

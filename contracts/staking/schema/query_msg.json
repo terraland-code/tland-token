@@ -3,64 +3,14 @@
   "title": "QueryMsg",
   "oneOf": [
     {
-      "description": "Claims shows the tokens in process of unbonding for this address",
+      "description": "Return config",
       "type": "object",
       "required": [
-        "claims"
+        "config"
       ],
       "properties": {
-        "claims": {
-          "type": "object",
-          "required": [
-            "address"
-          ],
-          "properties": {
-            "address": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "description": "Show the number of tokens currently staked by this address.",
-      "type": "object",
-      "required": [
-        "staked"
-      ],
-      "properties": {
-        "staked": {
-          "type": "object",
-          "required": [
-            "address"
-          ],
-          "properties": {
-            "address": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "description": "Show the number of reward to withdraw",
-      "type": "object",
-      "required": [
-        "reward"
-      ],
-      "properties": {
-        "reward": {
-          "type": "object",
-          "required": [
-            "address"
-          ],
-          "properties": {
-            "address": {
-              "type": "string"
-            }
-          }
+        "config": {
+          "type": "object"
         }
       },
       "additionalProperties": false
@@ -79,20 +29,49 @@
       "additionalProperties": false
     },
     {
-      "description": "Withdrawn reward",
+      "description": "Return staker info",
       "type": "object",
       "required": [
-        "withdrawn"
+        "member"
       ],
       "properties": {
-        "withdrawn": {
+        "member": {
           "type": "object",
           "required": [
-            "address"
+            "addr"
           ],
           "properties": {
-            "address": {
+            "addr": {
               "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Return stakers",
+      "type": "object",
+      "required": [
+        "list_members"
+      ],
+      "properties": {
+        "list_members": {
+          "type": "object",
+          "properties": {
+            "limit": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "start_after": {
+              "type": [
+                "string",
+                "null"
+              ]
             }
           }
         }

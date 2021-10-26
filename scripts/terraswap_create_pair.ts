@@ -1,5 +1,5 @@
 import {LCDClient, MnemonicKey, isTxError, MsgExecuteContract} from '@terra-money/terra.js';
-import { config } from './config/config';
+import { config } from './config/network/config.json';
 
 const token_address = "terra18nuhtf4ajudu7hvslxf87cw7e4djdejwtqfe6u";
 const terraswap_factory_address = "terra18qpjm4zkvqnpjpw0zn0tdr8gdzvt8au35v45xf";

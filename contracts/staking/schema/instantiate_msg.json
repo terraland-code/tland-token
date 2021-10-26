@@ -6,6 +6,7 @@
     "burn_address",
     "distribution_schedule",
     "instant_claim_percentage_loss",
+    "owner",
     "staking_token",
     "terraland_token",
     "unbonding_period"
@@ -24,6 +25,9 @@
       "type": "integer",
       "format": "uint64",
       "minimum": 0.0
+    },
+    "owner": {
+      "type": "string"
     },
     "staking_token": {
       "type": "string"

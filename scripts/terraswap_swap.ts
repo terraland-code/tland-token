@@ -1,5 +1,5 @@
 import {LCDClient, MnemonicKey, MsgExecuteContract, isTxError} from '@terra-money/terra.js';
-import { config } from './config/config';
+import { config } from './config/network/config.json';
 
 const pool_address = "terra1jh0tjgmqwrml0te43j3s8zxwnr33tj95u44xja";
 

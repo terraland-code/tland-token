@@ -1,10 +1,14 @@
 use cosmwasm_std::StdError;
+use cw0::PaymentError;
 use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq)]
 pub enum ContractError {
     #[error("{0}")]
     Std(#[from] StdError),
+
+    #[error("{0}")]
+    Payment(#[from] PaymentError),
 
     #[error("No claims that can be released currently")]
     NothingToClaim {},
@@ -20,4 +24,7 @@ pub enum ContractError {
 
     #[error("Unauthorized")]
     Unauthorized {},
+
+    #[error("Invalid fee amount")]
+    InvalidFeeAmount {},
 }

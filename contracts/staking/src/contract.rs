@@ -5,7 +5,7 @@ use std::ops::Div;
 use cosmwasm_std::{Addr, BankMsg, Binary, Deps, DepsMut, Env, from_slice, MessageInfo, Order, Response, StdError, StdResult, Storage, SubMsg, to_binary, Uint128, WasmMsg, WasmQuery};
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cw0::{Duration, maybe_addr};
+use cw0::{Duration, maybe_addr, must_pay};
 use cw20::{Balance, BalanceResponse, Cw20CoinVerified, Cw20ExecuteMsg, Cw20QueryMsg, Cw20ReceiveMsg};
 use cw2::set_contract_version;
 use cw_storage_plus::{Bound, U8Key};
@@ -278,6 +278,9 @@ pub fn execute_unbond(
     info: MessageInfo,
     amount: Uint128,
 ) -> Result<Response, ContractError> {
+    // sender has to pay 1 UST to claim
+    must_pay_fee(&info)?;
+
     let old_stake = STAKE.may_load(deps.storage, &info.sender)?;
     let old_total = TOTAL.load(deps.storage)?;
 
@@ -322,6 +325,9 @@ pub fn execute_claim(
     env: Env,
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
+    // sender has to pay 1 UST to claim
+    must_pay_fee(&info)?;
+
     // get amount of tokens to release
     let release = CLAIMS.claim_tokens(deps.storage, &info.sender, &env.block, None)?;
     if release.is_zero() {
@@ -352,6 +358,9 @@ pub fn execute_instant_claim(
     env: Env,
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
+    // sender has to pay 1 UST to claim
+    must_pay_fee(&info)?;
+
     let config = CONFIG.load(deps.storage)?;
 
     // Create block after unbonding_period to be able to release all claims
@@ -544,12 +553,22 @@ fn calc_reward(
         let member_reward = amount
             .checked_mul(Uint128::from(member_weight))
             .map_err(StdError::overflow)?
-            .div(Uint128::from(epoch_weight));
+            .checked_div(Uint128::from(epoch_weight))
+            .unwrap_or(Uint128::zero());
 
         reward += member_reward;
     }
 
     Ok(reward)
+}
+
+fn must_pay_fee(info: &MessageInfo) -> Result<(), ContractError> {
+    // check if 1 UST was send
+    let amount = must_pay(info, "uust")?;
+    if amount != Uint128::new(1000000) {
+        return Err(ContractError::InvalidFeeAmount {});
+    }
+    Ok(())
 }
 
 #[inline]
@@ -629,4 +648,123 @@ fn query_member_list(
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use cosmwasm_std::{from_slice};
+    use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
+
+    use super::*;
+
+    const INIT_ADMIN: &str = "admin";
+    const USER1: &str = "somebody";
+    const USER2: &str = "else";
+    const USER3: &str = "funny";
+    const UNBONDING_PERIOD: u64 = 600;
+    const BURN_ADDRESS: &str = "burn1234567890";
+    const TERRALAND_TOKEN_ADDRESS: &str = "tland1234567890";
+    const STAKING_TOKEN_ADDRESS: &str = "staking1234567890";
+
+    fn default_instantiate(
+        deps: DepsMut,
+    ) {
+        let msg = InstantiateMsg {
+            owner: INIT_ADMIN.into(),
+            staking_token: STAKING_TOKEN_ADDRESS.into(),
+            terraland_token: TERRALAND_TOKEN_ADDRESS.into(),
+            unbonding_period: UNBONDING_PERIOD,
+            burn_address: BURN_ADDRESS.into(),
+            instant_claim_percentage_loss: 0,
+            distribution_schedule: Vec::from([
+                Schedule {
+                    amount: Uint128::new(1_000_000_000),
+                    start_time: mock_env().block.time.seconds(),
+                    end_time: mock_env().block.time.seconds() + WEEK,
+                }]),
+        };
+        let info = mock_info("creator", &[]);
+        instantiate(deps, mock_env(), info, msg).unwrap();
+    }
+
+    #[test]
+    fn proper_instantiation() {
+        let mut deps = mock_dependencies(&[]);
+        let env = mock_env();
+        default_instantiate(deps.as_mut());
+
+        // it worked, let's query the state
+        let res = query_config(deps.as_ref()).unwrap();
+        assert_eq!(INIT_ADMIN, res.owner.as_str());
+
+        let res = query_total(deps.as_ref()).unwrap();
+        assert_eq!(0, res.total.u128());
+
+        let res = query_member(deps.as_ref(), env, USER1.into()).unwrap();
+        assert_eq!(None, res.member)
+    }
+
+    fn get_member(deps: Deps, addr: String) -> Option<MemberItem> {
+        let raw = query(deps, mock_env(), QueryMsg::Member { addr }).unwrap();
+        let res: MemberResponse = from_slice(&raw).unwrap();
+        return res.member;
+    }
+
+    // this tests the member queries
+    fn assert_users(
+        deps: Deps,
+        user1: Option<MemberItem>,
+        user2: Option<MemberItem>,
+        user3: Option<MemberItem>,
+    ) {
+        let member1 = get_member(deps, USER1.into());
+        assert_eq!(member1, user1);
+
+        let member2 = get_member(deps, USER2.into());
+        assert_eq!(member2, user2);
+
+        let member3 = get_member(deps, USER3.into());
+        assert_eq!(member3, user3);
+    }
+
+    fn bond_cw20(mut deps: DepsMut, user1: u128, user2: u128, user3: u128, height_delta: u64) {
+        let mut env = mock_env();
+        env.block.height += height_delta;
+
+        for (addr, stake) in &[(USER1, user1), (USER2, user2), (USER3, user3)] {
+            if *stake != 0 {
+                let msg = ExecuteMsg::Receive(Cw20ReceiveMsg {
+                    sender: addr.to_string(),
+                    amount: Uint128::new(*stake),
+                    msg: to_binary(&ReceiveMsg::Bond {}).unwrap(),
+                });
+                let info = mock_info(STAKING_TOKEN_ADDRESS, &[]);
+                execute(deps.branch(), env.clone(), info, msg);
+            }
+        }
+    }
+
+    // this tests the member queries
+    fn assert_stake(deps: Deps, user1_stake: u128, user2_stake: u128, user3_stake: u128) {
+        let env = mock_env();
+        let stake1 = query_member(deps, env.clone(),USER1.into()).unwrap();
+        assert_eq!(stake1.member.unwrap().stake, user1_stake.into());
+
+        let stake2 = query_member(deps, env.clone(),USER2.into()).unwrap();
+        assert_eq!(stake2.member.unwrap().stake, user2_stake.into());
+
+        let stake3 = query_member(deps, env.clone(),USER3.into()).unwrap();
+        assert_eq!(stake3.member.unwrap().stake, user3_stake.into());
+    }
+
+    #[test]
+    fn cw20_token_bond() {
+        let mut deps = mock_dependencies(&[]);
+        default_instantiate(deps.as_mut());
+
+        // Assert original staking members
+        assert_users(deps.as_ref(), None, None, None);
+
+        bond_cw20(deps.as_mut(), 12_000, 7_500, 4_000, 1);
+
+        assert_stake(deps.as_ref(), 12_000, 7_500, 4_000);
+    }
+
+}

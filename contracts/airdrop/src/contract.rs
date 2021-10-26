@@ -320,12 +320,11 @@ fn check_missions(querier: &QuerierWrapper, cfg: &Config, addr: &Addr) -> StdRes
         let query = WasmQuery::Smart {
             contract_addr: contract_addr.to_string(),
             msg: to_binary(&StakingQueryMsg::Member {
-                address: addr.to_string(),
-                at_height: None,
+                addr: addr.to_string(),
             })?,
         }.into();
         let res: StakingMemberResponse = querier.query(&query)?;
-        if res.snapshot.is_some() {
+        if res.member.is_some() {
             missions.is_in_lp_staking = true;
         }
     }
@@ -334,12 +333,11 @@ fn check_missions(querier: &QuerierWrapper, cfg: &Config, addr: &Addr) -> StdRes
         let query = WasmQuery::Smart {
             contract_addr: contract_addr.to_string(),
             msg: to_binary(&StakingQueryMsg::Member {
-                address: addr.to_string(),
-                at_height: None,
+                addr: addr.to_string(),
             })?,
         }.into();
         let res: StakingMemberResponse = querier.query(&query)?;
-        if res.snapshot.is_some() {
+        if res.member.is_some() {
             missions.is_in_tland_staking = true;
         }
     }
