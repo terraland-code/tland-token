@@ -1,3 +1,4 @@
+use std::cmp;
 use std::ops::{Div, Mul};
 
 use cosmwasm_std::{Addr, BankMsg, Binary, Decimal, Deps, DepsMut, Env, from_slice, MessageInfo, Order, Response, StdError, StdResult, SubMsg, to_binary, Uint128, WasmMsg, WasmQuery};
@@ -10,7 +11,7 @@ use cw_storage_plus::Bound;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MemberListResponse, MemberListResponseItem, MemberResponse, MemberResponseItem, NewConfig, QueryMsg, ReceiveMsg};
-use crate::state::{CLAIMS, Config, CONFIG, MemberInfo, MEMBERS, Schedule, State, STATE};
+use crate::state::{CLAIMS, Config, CONFIG, MemberInfo, MEMBERS, State, STATE};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:fcq-staking";
@@ -154,7 +155,7 @@ pub fn execute_bond(
         .unwrap_or(Default::default());
 
     // compute reward and updates member info with new rewards
-    update_member_reward(&state, &cfg, env.block.time.seconds(), &mut member_info);
+    update_member_reward(&state, &cfg, env.block.time.seconds(), &mut member_info)?;
 
     // update member stake
     member_info.stake += amount;
@@ -174,46 +175,67 @@ pub fn execute_bond(
         .add_attribute("sender", sender))
 }
 
-fn update_member_reward(state: &State, cfg: &Config, time: u64, member_info: &mut MemberInfo) -> () {
-    let global_reward_index = compute_reward_index(&cfg, &state, time);
+fn update_member_reward(state: &State, cfg: &Config, time: u64, member_info: &mut MemberInfo) -> StdResult<()> {
+    let global_reward_index = compute_reward_index(&cfg, &state, time)?;
 
     let reward = compute_member_reward(&member_info, global_reward_index);
 
     member_info.reward_index = global_reward_index;
     member_info.pending_reward = reward;
+
+    Ok(())
 }
 
-fn compute_reward_index(cfg: &Config, state: &State, time: u64) -> Decimal {
+fn compute_reward_index(cfg: &Config, state: &State, time: u64) -> StdResult<Decimal> {
     // if there is first stake, the reward index is 0
     if state.last_updated == 0 {
-        return Decimal::zero();
+        return Ok(Decimal::zero());
     }
 
-    // if we are outside distribution schedule then panic
-    let current_schedule = find_distribution_schedule(&cfg, time).unwrap();
+    // if we are outside distribution schedule then Error
+    let (i, j) = find_distribution_schedule_range(
+        &cfg, state.last_updated, time)?;
 
-    // compute distributed amount per second for current schedule
-    let distributed_amount_per_sec = current_schedule.amount
-        .div(Uint128::from(current_schedule.end_time - current_schedule.start_time));
+    let mut distributed_amount = Uint128::zero();
 
-    // distributed amount per second multiplied by time elapsed since last update
-    let distributed_amount = distributed_amount_per_sec
-        .mul(Uint128::from(time - state.last_updated));
+    for id in i..=j {
+        let schedule = &cfg.distribution_schedule[id];
+
+        // compute distributed amount per second for current schedule
+        let distributed_amount_per_sec = schedule.amount
+            .div(Uint128::from(schedule.end_time - schedule.start_time));
+
+        // distributed amount per second multiplied by time elapsed in this schedule
+        distributed_amount += distributed_amount_per_sec
+            .mul(Uint128::from(cmp::min(time, schedule.end_time) -
+                cmp::max(state.last_updated, schedule.start_time)));
+    }
 
     // global reward index is increased by distributed amount per staked token
     let res = state.global_reward_index
         + Decimal::from_ratio(distributed_amount, state.total_stake);
 
-    return res;
+    Ok(res)
 }
 
-fn find_distribution_schedule(cfg: &Config, time: u64) -> Option<Schedule> {
-    for schedule in cfg.distribution_schedule.iter() {
-        if time >= schedule.start_time && time < schedule.end_time {
-            return Some(schedule.clone());
+fn find_distribution_schedule_range(cfg: &Config, start_time: u64, end_time: u64) -> StdResult<(usize, usize)> {
+    let mut start: Option<usize> = None;
+    let mut end: Option<usize> = None;
+
+    for (i, schedule) in cfg.distribution_schedule.iter().enumerate() {
+        if start_time >= schedule.start_time && start_time < schedule.end_time {
+            start = Some(i)
+        }
+        if end_time >= schedule.start_time && end_time < schedule.end_time {
+            end = Some(i)
         }
     }
-    None
+
+    if start.is_none() || end.is_none() {
+        return Err(StdError::not_found("distribution_schedule"));
+    }
+
+    Ok((start.unwrap(), end.unwrap()))
 }
 
 fn compute_member_reward(member_info: &MemberInfo, global_reward_index: Decimal) -> Uint128 {
@@ -246,7 +268,7 @@ pub fn execute_unbond(
         .unwrap_or(Default::default());
 
     // compute reward and updates member info with new rewards
-    update_member_reward(&state, &cfg, env.block.time.seconds(), &mut member_info);
+    update_member_reward(&state, &cfg, env.block.time.seconds(), &mut member_info)?;
 
     // update member stake
     member_info.stake = member_info.stake.checked_sub(amount).map_err(StdError::overflow)?;
@@ -365,7 +387,7 @@ pub fn execute_withdraw(
         .unwrap_or(Default::default());
 
     // calculate member reward until current block
-    update_member_reward(&state, &cfg, env.block.time.seconds(), &mut member_info);
+    update_member_reward(&state, &cfg, env.block.time.seconds(), &mut member_info)?;
 
     // amount to withdraw is difference between the reward and the withdraw amount
     let amount = member_info.pending_reward.checked_sub(member_info.withdrawn)
@@ -503,16 +525,15 @@ fn query_member(deps: Deps, env: Env, addr: String) -> StdResult<MemberResponse>
     let addr = deps.api.addr_validate(&addr)?;
     let member_info = MEMBERS.may_load(deps.storage, &addr)?;
 
-    if let Some(info) = member_info {
+    if let Some(mut info) = member_info {
         let cfg = CONFIG.load(deps.storage)?;
         let state = STATE.load(deps.storage)?;
-        let global_reward_index = compute_reward_index(&cfg, &state, env.block.time.seconds());
-        let reward = compute_member_reward(&info, global_reward_index);
+        update_member_reward(&state, &cfg, env.block.time.seconds(), &mut info)?;
 
         return Ok(MemberResponse {
             member: Some(MemberResponseItem {
                 stake: info.stake,
-                reward,
+                reward: info.pending_reward,
                 reward_index: info.reward_index,
                 withdrawn: info.withdrawn,
                 claims: CLAIMS.query_claims(deps, &addr)?.claims,
@@ -541,19 +562,18 @@ fn query_member_list(
         .range(deps.storage, start, None, Order::Ascending)
         .take(limit)
         .map(|item| {
-            let (key, info) = item?;
+            let (key, mut info) = item?;
             let address = deps.api.addr_validate(&String::from_utf8(key)?)?;
-
             let cfg = CONFIG.load(deps.storage)?;
             let state = STATE.load(deps.storage)?;
-            let global_reward_index = compute_reward_index(&cfg, &state, env.block.time.seconds());
-            let reward = compute_member_reward(&info, global_reward_index);
+
+            update_member_reward(&state, &cfg, env.block.time.seconds(), &mut info)?;
 
             Ok(MemberListResponseItem {
                 address: address.to_string(),
                 info: MemberResponseItem {
                     stake: info.stake,
-                    reward,
+                    reward: info.pending_reward,
                     reward_index: info.reward_index,
                     withdrawn: info.withdrawn,
                     claims: CLAIMS.query_claims(deps, &address)?.claims,
@@ -567,8 +587,9 @@ fn query_member_list(
 
 #[cfg(test)]
 mod tests {
-    use cosmwasm_std::from_slice;
+    use cosmwasm_std::{Coin, from_slice};
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
+    use crate::state::Schedule;
 
     use super::*;
 
@@ -597,7 +618,13 @@ mod tests {
                     amount: Uint128::new(150_000_000_000),
                     start_time: mock_env().block.time.seconds(),
                     end_time: mock_env().block.time.seconds() + WEEK,
-                }]),
+                },
+                Schedule {
+                    amount: Uint128::new(100_000_000_000),
+                    start_time: mock_env().block.time.seconds() + WEEK,
+                    end_time: mock_env().block.time.seconds() + 2 * WEEK,
+                }
+            ]),
         };
         let info = mock_info("creator", &[]);
         instantiate(deps, mock_env(), info, msg).unwrap();
@@ -666,6 +693,20 @@ mod tests {
         }
     }
 
+    fn unbond(mut deps: DepsMut, user1: u128, user2: u128, user3: u128, height_delta: u64, funds: &[Coin]) {
+        let env = get_env(height_delta);
+
+        for (addr, stake) in &[(USER1, user1), (USER2, user2), (USER3, user3)] {
+            if *stake != 0 {
+                let msg = ExecuteMsg::Unbond {
+                    tokens: Uint128::new(*stake),
+                };
+                let info = mock_info(addr, funds);
+                execute(deps.branch(), env.clone(), info, msg).unwrap();
+            }
+        }
+    }
+
     // this tests the member queries
     fn assert_stake(deps: Deps, user1_stake: u128, user2_stake: u128, user3_stake: u128, height_delta: u64) {
         let env = get_env(height_delta);
@@ -684,13 +725,13 @@ mod tests {
         let env = get_env(height_delta);
 
         let res1 = query_member(deps, env.clone(), USER1.into()).unwrap();
-        assert_eq!(res1.member.unwrap().reward, user1_reward.into());
+        assert_eq!(res1.member.unwrap_or(Default::default()).reward, user1_reward.into());
 
         let res2 = query_member(deps, env.clone(), USER2.into()).unwrap();
-        assert_eq!(res2.member.unwrap().reward, user2_reward.into());
+        assert_eq!(res2.member.unwrap_or(Default::default()).reward, user2_reward.into());
 
         let res3 = query_member(deps, env.clone(), USER3.into()).unwrap();
-        assert_eq!(res3.member.unwrap().reward, user3_reward.into());
+        assert_eq!(res3.member.unwrap_or(Default::default()).reward, user3_reward.into());
     }
 
     #[test]
@@ -702,9 +743,43 @@ mod tests {
         assert_users(deps.as_ref(), None, None, None);
 
         bond_cw20(deps.as_mut(), 12_000, 7_500, 500, 1);
-
         assert_stake(deps.as_ref(), 12_000, 7_500, 500, 1);
 
-        // unbond_cw20(deps.as_mut(), 6_000, 1_500, 0, 2)
+        // check rewards after 1 block (6 seconds)
+        assert_rewards(deps.as_ref(), 892_854, 558_033, 37_202, 2);
+
+        bond_cw20(deps.as_mut(), 0, 0, 5_000, 2);
+        assert_stake(deps.as_ref(), 12_000, 7_500, 5_500, 2);
+        assert_rewards(deps.as_ref(), 892_854, 558_033, 37_202, 2);
+
+        // check rewards after another 1 block (6 seconds)
+        assert_rewards(deps.as_ref(), 1_607_137, 1_004_460, 364_582, 3);
+    }
+
+    #[test]
+    fn cw20_token_bond_on_distribution_schedules_edge() {
+        let mut deps = mock_dependencies(&[]);
+        default_instantiate(deps.as_mut());
+
+        // bond 1 block before end of first distribution schedule
+        bond_cw20(deps.as_mut(), 10, 0, 0, 100799);
+
+        // calc reward 1 block after end of first distribution schedule
+        assert_rewards(deps.as_ref(), 2480148, 0, 0, 100801);
+    }
+
+    #[test]
+    fn cw20_token_unbond() {
+        let mut deps = mock_dependencies(&[]);
+        default_instantiate(deps.as_mut());
+
+        bond_cw20(deps.as_mut(), 12_000, 7_500, 500, 1);
+
+        unbond(deps.as_mut(), 0, 0, 500, 2,
+               &[Coin{ denom: "uust".to_string(), amount: Uint128::new(1000000) }]);
+
+        assert_stake(deps.as_ref(), 12_000, 7_500, 0, 2);
+
+        assert_rewards(deps.as_ref(), 892_854, 558_033, 37_202, 2);
     }
 }

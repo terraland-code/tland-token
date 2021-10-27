@@ -84,7 +84,7 @@ pub enum QueryMsg {
     },
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+#[derive(Default, Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
 pub struct MemberResponseItem {
     pub stake: Uint128,
     pub reward: Uint128,
