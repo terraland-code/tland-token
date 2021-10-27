@@ -27,4 +27,7 @@ pub enum ContractError {
 
     #[error("Invalid fee amount")]
     InvalidFeeAmount {},
+
+    #[error("No reward to release")]
+    NothingToWithdraw {},
 }

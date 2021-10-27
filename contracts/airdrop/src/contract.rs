@@ -320,7 +320,7 @@ fn check_missions(querier: &QuerierWrapper, cfg: &Config, addr: &Addr) -> StdRes
         let query = WasmQuery::Smart {
             contract_addr: contract_addr.to_string(),
             msg: to_binary(&StakingQueryMsg::Member {
-                addr: addr.to_string(),
+                address: addr.to_string(),
             })?,
         }.into();
         let res: StakingMemberResponse = querier.query(&query)?;
@@ -333,7 +333,7 @@ fn check_missions(querier: &QuerierWrapper, cfg: &Config, addr: &Addr) -> StdRes
         let query = WasmQuery::Smart {
             contract_addr: contract_addr.to_string(),
             msg: to_binary(&StakingQueryMsg::Member {
-                addr: addr.to_string(),
+                address: addr.to_string(),
             })?,
         }.into();
         let res: StakingMemberResponse = querier.query(&query)?;

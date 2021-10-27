@@ -16,13 +16,13 @@
       "additionalProperties": false
     },
     {
-      "description": "Return total staked tokens",
+      "description": "Return state",
       "type": "object",
       "required": [
-        "total"
+        "state"
       ],
       "properties": {
-        "total": {
+        "state": {
           "type": "object"
         }
       },
@@ -38,10 +38,10 @@
         "member": {
           "type": "object",
           "required": [
-            "addr"
+            "address"
           ],
           "properties": {
-            "addr": {
+            "address": {
               "type": "string"
             }
           }

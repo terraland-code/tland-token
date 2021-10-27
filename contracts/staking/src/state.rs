@@ -1,6 +1,6 @@
-use cosmwasm_std::{Addr, Uint128};
+use cosmwasm_std::{Addr, Decimal, Uint128};
 use cw_controllers::Claims;
-use cw_storage_plus::{Item, Map, U8Key};
+use cw_storage_plus::{Item, Map};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -13,8 +13,6 @@ pub struct Config {
     pub burn_address: Addr,
     pub instant_claim_percentage_loss: u64,
     pub distribution_schedule: Vec<Schedule>,
-    pub start_time: u64,
-    pub end_time: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
@@ -24,22 +22,22 @@ pub struct Schedule {
     pub end_time: u64,
 }
 
+#[derive(Default, Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+pub struct MemberInfo {
+    pub stake: Uint128,
+    pub pending_reward: Uint128,
+    pub reward_index: Decimal,
+    pub withdrawn: Uint128,
+}
+
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-pub struct Stake {
-    pub amount: Uint128,
-    pub time: u64,
+pub struct State {
+    pub total_stake: Uint128,
+    pub last_updated: u64,
+    pub global_reward_index: Decimal,
 }
 
 pub const CONFIG: Item<Config> = Item::new("config");
-pub const TOTAL: Item<Stake> = Item::new("total");
+pub const MEMBERS: Map<&Addr, MemberInfo> = Map::new("members");
+pub const STATE: Item<State> = Item::new("state");
 pub const CLAIMS: Claims = Claims::new("claims");
-pub const STAKE: Map<&Addr, Stake> = Map::new("stake");
-pub const WITHDRAWN: Map<&Addr, Uint128> = Map::new("withdrawn");
-
-// Weight map for member for epoch
-pub const MEMBERS_WEIGHT: Map<(U8Key, &Addr), u128> = Map::new("members");
-// Weight map for epoch
-pub const EPOCHS_WEIGHT: Map<U8Key, u128> = Map::new("epochs_weight");
-
-
-

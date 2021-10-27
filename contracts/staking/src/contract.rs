@@ -1,24 +1,20 @@
-use std::cmp;
-use std::collections::HashMap;
-use std::ops::Div;
+use std::ops::{Div, Mul};
 
-use cosmwasm_std::{Addr, BankMsg, Binary, Deps, DepsMut, Env, from_slice, MessageInfo, Order, Response, StdError, StdResult, Storage, SubMsg, to_binary, Uint128, WasmMsg, WasmQuery};
+use cosmwasm_std::{Addr, BankMsg, Binary, Decimal, Deps, DepsMut, Env, from_slice, MessageInfo, Order, Response, StdError, StdResult, SubMsg, to_binary, Uint128, WasmMsg, WasmQuery};
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cw0::{Duration, maybe_addr, must_pay};
 use cw20::{Balance, BalanceResponse, Cw20CoinVerified, Cw20ExecuteMsg, Cw20QueryMsg, Cw20ReceiveMsg};
 use cw2::set_contract_version;
-use cw_storage_plus::{Bound, U8Key};
+use cw_storage_plus::Bound;
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, InstantiateMsg, MemberItem, MemberListResponse, MemberResponse, NewConfig, QueryMsg, ReceiveMsg, TotalResponse};
-use crate::state::{CLAIMS, Config, CONFIG, EPOCHS_WEIGHT, MEMBERS_WEIGHT, Schedule, STAKE, Stake, TOTAL, WITHDRAWN};
+use crate::msg::{ExecuteMsg, InstantiateMsg, MemberListResponse, MemberListResponseItem, MemberResponse, MemberResponseItem, NewConfig, QueryMsg, ReceiveMsg};
+use crate::state::{CLAIMS, Config, CONFIG, MemberInfo, MEMBERS, Schedule, State, STATE};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:fcq-staking";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
-
-const WEEK: u64 = 7 * 24 * 3600;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -36,16 +32,17 @@ pub fn instantiate(
         unbonding_period: msg.unbonding_period,
         burn_address: deps.api.addr_validate(&msg.burn_address)?,
         instant_claim_percentage_loss: msg.instant_claim_percentage_loss,
-        distribution_schedule: msg.distribution_schedule.clone(),
-        start_time: msg.distribution_schedule.first().unwrap().start_time,
-        end_time: msg.distribution_schedule.last().unwrap().end_time,
+        distribution_schedule: msg.distribution_schedule,
+    };
+
+    let state = State {
+        total_stake: Default::default(),
+        last_updated: 0,
+        global_reward_index: Default::default(),
     };
 
     CONFIG.save(deps.storage, &config)?;
-    TOTAL.save(deps.storage, &Stake {
-        amount: Uint128::new(0),
-        time: msg.distribution_schedule.first().unwrap().start_time,
-    })?;
+    STATE.save(deps.storage, &state)?;
 
     Ok(Response::default())
 }
@@ -99,9 +96,7 @@ pub fn execute_update_config(
             exists.instant_claim_percentage_loss = percentage;
         }
         if let Some(schedule) = new_config.distribution_schedule {
-            exists.distribution_schedule = schedule.clone();
-            exists.start_time = schedule.first().unwrap().start_time;
-            exists.end_time = schedule.first().unwrap().end_time;
+            exists.distribution_schedule = schedule;
         }
         Ok(exists)
     })?;
@@ -141,9 +136,6 @@ pub fn execute_bond(
     sender: Addr,
 ) -> Result<Response, ContractError> {
     let cfg = CONFIG.load(deps.storage)?;
-    if env.block.time.seconds() < cfg.start_time || env.block.time.seconds() > cfg.end_time {
-        return Err(ContractError::StakingClosed {});
-    }
 
     // ensure the sent token was proper
     let amount = match &amount {
@@ -157,31 +149,24 @@ pub fn execute_bond(
         _ => Err(ContractError::MissedToken {})
     }?;
 
-    let old_stake = STAKE.may_load(deps.storage, &sender)?;
-    STAKE.update(deps.storage, &sender, |stake| -> StdResult<_> {
-        let mut val = amount;
-        if stake.is_some() {
-            val += stake.unwrap().amount
-        }
-        Ok(Stake { amount: val, time: env.block.time.seconds() })
-    })?;
+    let mut state = STATE.load(deps.storage)?;
+    let mut member_info = MEMBERS.may_load(deps.storage, &sender)?
+        .unwrap_or(Default::default());
 
-    // update total stake
-    let old_total = TOTAL.load(deps.storage)?;
-    TOTAL.update(deps.storage, |mut total| -> StdResult<_> {
-        total.amount += amount;
-        total.time = env.block.time.seconds();
-        Ok(total)
-    })?;
+    // compute reward and updates member info with new rewards
+    update_member_reward(&state, &cfg, env.block.time.seconds(), &mut member_info);
 
-    update_weight(
-        deps.storage,
-        &sender,
-        old_stake,
-        old_total,
-        env.block.time.seconds(),
-        &cfg,
-    )?;
+    // update member stake
+    member_info.stake += amount;
+
+    // update state with new stake and global_reward_index
+    state.total_stake += amount;
+    state.last_updated = env.block.time.seconds();
+    state.global_reward_index = member_info.reward_index;
+
+    // save new member info and state in storage
+    MEMBERS.save(deps.storage, &sender, &member_info)?;
+    STATE.save(deps.storage, &state)?;
 
     Ok(Response::new()
         .add_attribute("action", "bond")
@@ -189,87 +174,53 @@ pub fn execute_bond(
         .add_attribute("sender", sender))
 }
 
-fn update_weight(
-    storage: &mut dyn Storage,
-    sender: &Addr,
-    stake: Option<Stake>,
-    total: Stake,
-    time: u64,
-    cfg: &Config,
-) -> StdResult<()> {
-    if stake.is_some() {
-        let member_diffs = calc_weight_diffs(stake.unwrap(), time, cfg)?;
+fn update_member_reward(state: &State, cfg: &Config, time: u64, member_info: &mut MemberInfo) -> () {
+    let global_reward_index = compute_reward_index(&cfg, &state, time);
 
-        for (epoch_id, weight_diff) in member_diffs {
-            MEMBERS_WEIGHT.update(storage, (U8Key::from(epoch_id), &sender), |weight| -> StdResult<_> {
-                Ok(weight.unwrap_or_default() + weight_diff)
-            })?;
-        }
-    }
+    let reward = compute_member_reward(&member_info, global_reward_index);
 
-    let epoch_diffs = calc_weight_diffs(total, time, cfg)?;
-
-    for (epoch_id, weight_diff) in epoch_diffs {
-        EPOCHS_WEIGHT.update(storage, U8Key::from(epoch_id as u8), |weight| -> StdResult<_> {
-            Ok(weight.unwrap_or_default() + weight_diff)
-        })?;
-    }
-
-    Ok(())
+    member_info.reward_index = global_reward_index;
+    member_info.pending_reward = reward;
 }
 
-fn calc_weight_diffs(
-    stake: Stake,
-    time: u64,
-    cfg: &Config,
-) -> StdResult<HashMap<u8, u128>> {
-    if stake.amount.is_zero() {
-        return Ok(HashMap::new());
+fn compute_reward_index(cfg: &Config, state: &State, time: u64) -> Decimal {
+    // if there is first stake, the reward index is 0
+    if state.last_updated == 0 {
+        return Decimal::zero();
     }
 
-    let start_epoch_id = (stake.time - cfg.start_time) / WEEK + 1;
-    let end_epoch_id = (time - cfg.start_time) / WEEK + 1;
+    // if we are outside distribution schedule then panic
+    let current_schedule = find_distribution_schedule(&cfg, time).unwrap();
 
-    let mut weight_diffs = HashMap::new();
-    for epoch_id in start_epoch_id..=end_epoch_id {
-        let epoch = get_epoch(cfg, epoch_id)?;
-        let weight_diff = calc_weight_diff(&epoch, &stake, time)?;
-        weight_diffs.insert(epoch_id as u8, weight_diff);
-    }
+    // compute distributed amount per second for current schedule
+    let distributed_amount_per_sec = current_schedule.amount
+        .div(Uint128::from(current_schedule.end_time - current_schedule.start_time));
 
-    Ok(weight_diffs)
+    // distributed amount per second multiplied by time elapsed since last update
+    let distributed_amount = distributed_amount_per_sec
+        .mul(Uint128::from(time - state.last_updated));
+
+    // global reward index is increased by distributed amount per staked token
+    let res = state.global_reward_index
+        + Decimal::from_ratio(distributed_amount, state.total_stake);
+
+    return res;
 }
 
-fn calc_weight_diff(epoch: &Schedule, stake: &Stake, until_time: u64) -> StdResult<u128> {
-    let start = cmp::max(epoch.start_time, stake.time);
-    let end = cmp::min(epoch.end_time, until_time);
-
-    if start < end {
-        return Ok(Uint128::new(0).u128());
-    }
-
-    let res = stake.amount.checked_mul(Uint128::from(end - start))?;
-
-    Ok(res.u128())
-}
-
-fn get_epoch(cfg: &Config, epoch_id: u64) -> StdResult<Schedule> {
-    let epoch_end = cfg.start_time + epoch_id * WEEK;
-    let epoch_start = epoch_end - WEEK;
-
-    let mut amount = Uint128::new(0);
+fn find_distribution_schedule(cfg: &Config, time: u64) -> Option<Schedule> {
     for schedule in cfg.distribution_schedule.iter() {
-        if schedule.start_time <= epoch_start && schedule.end_time >= epoch_end {
-            amount = schedule.amount;
-            break;
+        if time >= schedule.start_time && time < schedule.end_time {
+            return Some(schedule.clone());
         }
     }
+    None
+}
 
-    Ok(Schedule {
-        amount,
-        start_time: epoch_start,
-        end_time: epoch_end,
-    })
+fn compute_member_reward(member_info: &MemberInfo, global_reward_index: Decimal) -> Uint128 {
+    let pending_reward = member_info.stake * global_reward_index
+        - member_info.stake * member_info.reward_index;
+
+    return member_info.pending_reward + pending_reward;
 }
 
 pub fn execute_unbond(
@@ -278,23 +229,8 @@ pub fn execute_unbond(
     info: MessageInfo,
     amount: Uint128,
 ) -> Result<Response, ContractError> {
-    // sender has to pay 1 UST to claim
+    // sender has to pay fee to unbond
     must_pay_fee(&info)?;
-
-    let old_stake = STAKE.may_load(deps.storage, &info.sender)?;
-    let old_total = TOTAL.load(deps.storage)?;
-
-    // reduce the sender's stake - aborting if insufficient
-    STAKE.update(deps.storage, &info.sender, |stake| -> StdResult<_> {
-        let val = stake.unwrap().amount.checked_sub(amount)?;
-        Ok(Stake { amount: val, time: env.block.time.seconds() })
-    })?;
-
-    // reduce the total stake - aborting if insufficient
-    TOTAL.update(deps.storage, |total| -> StdResult<_> {
-        let val = total.amount.checked_sub(amount)?;
-        Ok(Stake { amount: val, time: env.block.time.seconds() })
-    })?;
 
     // provide them a claim
     let cfg = CONFIG.load(deps.storage)?;
@@ -305,14 +241,24 @@ pub fn execute_unbond(
         Duration::Time(cfg.unbonding_period).after(&env.block),
     )?;
 
-    update_weight(
-        deps.storage,
-        &info.sender,
-        old_stake,
-        old_total,
-        env.block.time.seconds(),
-        &cfg,
-    )?;
+    let mut state = STATE.load(deps.storage)?;
+    let mut member_info = MEMBERS.may_load(deps.storage, &info.sender)?
+        .unwrap_or(Default::default());
+
+    // compute reward and updates member info with new rewards
+    update_member_reward(&state, &cfg, env.block.time.seconds(), &mut member_info);
+
+    // update member stake
+    member_info.stake = member_info.stake.checked_sub(amount).map_err(StdError::overflow)?;
+
+    // update state with new stake and global_reward_index
+    state.total_stake -= amount;
+    state.last_updated = env.block.time.seconds();
+    state.global_reward_index = member_info.reward_index;
+
+    // save new member info and state in storage
+    MEMBERS.save(deps.storage, &info.sender, &member_info)?;
+    STATE.save(deps.storage, &state)?;
 
     Ok(Response::new()
         .add_attribute("action", "unbond")
@@ -325,7 +271,7 @@ pub fn execute_claim(
     env: Env,
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
-    // sender has to pay 1 UST to claim
+    // sender has to pay fee to claim
     must_pay_fee(&info)?;
 
     // get amount of tokens to release
@@ -336,13 +282,12 @@ pub fn execute_claim(
 
     // create message to transfer staking tokens
     let config = CONFIG.load(deps.storage)?;
-    let transfer = Cw20ExecuteMsg::Transfer {
-        recipient: info.sender.clone().into(),
-        amount: release,
-    };
     let message = SubMsg::new(WasmMsg::Execute {
         contract_addr: config.staking_token.clone().into(),
-        msg: to_binary(&transfer)?,
+        msg: to_binary(&Cw20ExecuteMsg::Transfer {
+            recipient: info.sender.clone().into(),
+            amount: release,
+        })?,
         funds: vec![],
     });
 
@@ -358,7 +303,7 @@ pub fn execute_instant_claim(
     env: Env,
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
-    // sender has to pay 1 UST to claim
+    // sender has to pay fee to instant_claim
     must_pay_fee(&info)?;
 
     let config = CONFIG.load(deps.storage)?;
@@ -382,24 +327,22 @@ pub fn execute_instant_claim(
         .map_err(StdError::overflow)?;
 
     // create message to release staking tokens to owner
-    let transfer = Cw20ExecuteMsg::Transfer {
-        recipient: info.sender.clone().into(),
-        amount: release,
-    };
     let message1 = SubMsg::new(WasmMsg::Execute {
         contract_addr: config.staking_token.clone().into(),
-        msg: to_binary(&transfer)?,
+        msg: to_binary(&Cw20ExecuteMsg::Transfer {
+            recipient: info.sender.clone().into(),
+            amount: release,
+        })?,
         funds: vec![],
     });
 
     // create message to transfer fee to burn address
-    let transfer_fee = Cw20ExecuteMsg::Transfer {
-        recipient: config.burn_address.clone().into(),
-        amount: fee,
-    };
     let message2 = SubMsg::new(WasmMsg::Execute {
         contract_addr: config.staking_token.clone().into(),
-        msg: to_binary(&transfer_fee)?,
+        msg: to_binary(&Cw20ExecuteMsg::Transfer {
+            recipient: config.burn_address.clone().into(),
+            amount: fee,
+        })?,
         funds: vec![],
     });
 
@@ -416,22 +359,37 @@ pub fn execute_withdraw(
     env: Env,
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
-    let amount = calc_reward(deps.storage, &info.sender, env.block.time.seconds())?;
+    let state = STATE.load(deps.storage)?;
+    let cfg = CONFIG.load(deps.storage)?;
+    let mut member_info = MEMBERS.may_load(deps.storage, &info.sender)?
+        .unwrap_or(Default::default());
+
+    // calculate member reward until current block
+    update_member_reward(&state, &cfg, env.block.time.seconds(), &mut member_info);
+
+    // amount to withdraw is difference between the reward and the withdraw amount
+    let amount = member_info.pending_reward.checked_sub(member_info.withdrawn)
+        .map_err(StdError::overflow)?;
+
+    if amount.is_zero() {
+        return Err(ContractError::NothingToWithdraw {});
+    }
 
     // update withdrawal
-    WITHDRAWN.update(deps.storage, &info.sender, |withdrawal| -> StdResult<_> {
-        Ok(withdrawal.unwrap_or_default().checked_add(amount)?)
+    MEMBERS.update(deps.storage, &info.sender, |member_info| -> StdResult<_> {
+        let mut info = member_info.unwrap();
+        info.withdrawn += amount;
+        Ok(info)
     })?;
 
-    // create message to transfer reward in fcqn tokens
+    // create message to transfer reward in terraland tokens
     let config = CONFIG.load(deps.storage)?;
-    let transfer = Cw20ExecuteMsg::Transfer {
-        recipient: info.sender.clone().into(),
-        amount,
-    };
     let message = SubMsg::new(WasmMsg::Execute {
         contract_addr: config.terraland_token.to_string(),
-        msg: to_binary(&transfer)?,
+        msg: to_binary(&Cw20ExecuteMsg::Transfer {
+            recipient: info.sender.clone().into(),
+            amount,
+        })?,
         funds: vec![],
     });
 
@@ -508,60 +466,6 @@ pub fn execute_token_withdraw(
         .add_attribute("sender", info.sender))
 }
 
-fn calc_reward(
-    storage: &dyn Storage,
-    addr: &Addr,
-    time: u64,
-) -> StdResult<Uint128> {
-    let cfg = CONFIG.load(storage)?;
-
-    let last_stake = STAKE.may_load(storage, &addr)?;
-    if last_stake.is_none() {
-        return Ok(Uint128::new(0));
-    }
-    let last_total = TOTAL.load(storage)?;
-
-    // calculate weight_diffs for epochs since last stake until time
-    let member_diffs = calc_weight_diffs(last_stake.unwrap(), time, &cfg)?;
-    let epoch_diffs = calc_weight_diffs(last_total, time, &cfg)?;
-
-    // calculate current epoch
-    let current_epoch_id = (time - cfg.start_time) / WEEK + 1;
-
-    // calculate reward for every epoch and sum
-    let mut reward = Uint128::new(0);
-    for epoch_id in 1..=current_epoch_id {
-        let epoch = get_epoch(&cfg, epoch_id)?;
-        let mut epoch_weight = EPOCHS_WEIGHT.may_load(storage, U8Key::new(epoch_id as u8))?.unwrap_or_default();
-        let mut member_weight = MEMBERS_WEIGHT.may_load(storage, (U8Key::new(epoch_id as u8), &addr))?.unwrap_or_default();
-
-        epoch_weight += epoch_diffs.get(&(epoch_id as u8)).unwrap_or(&(0 as u128));
-        member_weight += member_diffs.get(&(epoch_id as u8)).unwrap_or(&(0 as u128));
-
-        let mut amount = epoch.amount;
-
-        // if current epoch then only part of epoch amount is available for distribution
-        if epoch_id == current_epoch_id {
-            // amount multiplied by percentage of epoch elapsed time
-            amount = amount
-                .checked_mul(Uint128::from(time - epoch.start_time))
-                .map_err(StdError::overflow)?
-                .div(Uint128::from(epoch.end_time - epoch.start_time));
-        }
-
-        // member reward is proportional to member weight
-        let member_reward = amount
-            .checked_mul(Uint128::from(member_weight))
-            .map_err(StdError::overflow)?
-            .checked_div(Uint128::from(epoch_weight))
-            .unwrap_or(Uint128::zero());
-
-        reward += member_reward;
-    }
-
-    Ok(reward)
-}
-
 fn must_pay_fee(info: &MessageInfo) -> Result<(), ContractError> {
     // check if 1 UST was send
     let amount = must_pay(info, "uust")?;
@@ -580,8 +484,8 @@ fn coin_to_string(amount: Uint128, denom: &str) -> String {
 pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_binary(&query_config(deps)?),
-        QueryMsg::Total {} => to_binary(&query_total(deps)?),
-        QueryMsg::Member { addr } => to_binary(&query_member(deps, env, addr)?),
+        QueryMsg::State {} => to_binary(&query_state(deps)?),
+        QueryMsg::Member { address } => to_binary(&query_member(deps, env, address)?),
         QueryMsg::ListMembers { start_after, limit } =>
             to_binary(&query_member_list(deps, env, start_after, limit)?),
     }
@@ -591,21 +495,26 @@ pub fn query_config(deps: Deps) -> StdResult<Config> {
     Ok(CONFIG.load(deps.storage)?)
 }
 
-fn query_total(deps: Deps) -> StdResult<TotalResponse> {
-    let total = TOTAL.load(deps.storage)?;
-    Ok(TotalResponse { total: total.amount })
+fn query_state(deps: Deps) -> StdResult<State> {
+    Ok(STATE.load(deps.storage)?)
 }
 
 fn query_member(deps: Deps, env: Env, addr: String) -> StdResult<MemberResponse> {
     let addr = deps.api.addr_validate(&addr)?;
-    let stake = STAKE.may_load(deps.storage, &addr)?;
-    if let Some(s) = stake {
+    let member_info = MEMBERS.may_load(deps.storage, &addr)?;
+
+    if let Some(info) = member_info {
+        let cfg = CONFIG.load(deps.storage)?;
+        let state = STATE.load(deps.storage)?;
+        let global_reward_index = compute_reward_index(&cfg, &state, env.block.time.seconds());
+        let reward = compute_member_reward(&info, global_reward_index);
+
         return Ok(MemberResponse {
-            member: Some(MemberItem {
-                address: addr.to_string(),
-                stake: s.amount,
-                reward: calc_reward(deps.storage, &addr, env.block.time.seconds())?,
-                withdrawn: WITHDRAWN.may_load(deps.storage, &addr)?.unwrap_or_default(),
+            member: Some(MemberResponseItem {
+                stake: info.stake,
+                reward,
+                reward_index: info.reward_index,
+                withdrawn: info.withdrawn,
                 claims: CLAIMS.query_claims(deps, &addr)?.claims,
             }),
         });
@@ -628,18 +537,27 @@ fn query_member_list(
     let addr = maybe_addr(deps.api, start_after)?;
     let start = addr.map(|addr| Bound::exclusive(addr.as_ref()));
 
-    let members: StdResult<Vec<_>> = STAKE
+    let members: StdResult<Vec<_>> = MEMBERS
         .range(deps.storage, start, None, Order::Ascending)
         .take(limit)
         .map(|item| {
-            let (key, stake) = item?;
+            let (key, info) = item?;
             let address = deps.api.addr_validate(&String::from_utf8(key)?)?;
-            Ok(MemberItem {
+
+            let cfg = CONFIG.load(deps.storage)?;
+            let state = STATE.load(deps.storage)?;
+            let global_reward_index = compute_reward_index(&cfg, &state, env.block.time.seconds());
+            let reward = compute_member_reward(&info, global_reward_index);
+
+            Ok(MemberListResponseItem {
                 address: address.to_string(),
-                stake: stake.amount,
-                reward: calc_reward(deps.storage, &address, env.block.time.seconds())?,
-                withdrawn: WITHDRAWN.may_load(deps.storage, &address)?.unwrap_or_default(),
-                claims: CLAIMS.query_claims(deps, &address)?.claims,
+                info: MemberResponseItem {
+                    stake: info.stake,
+                    reward,
+                    reward_index: info.reward_index,
+                    withdrawn: info.withdrawn,
+                    claims: CLAIMS.query_claims(deps, &address)?.claims,
+                },
             })
         })
         .collect();
@@ -649,7 +567,7 @@ fn query_member_list(
 
 #[cfg(test)]
 mod tests {
-    use cosmwasm_std::{from_slice};
+    use cosmwasm_std::from_slice;
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
 
     use super::*;
@@ -662,6 +580,7 @@ mod tests {
     const BURN_ADDRESS: &str = "burn1234567890";
     const TERRALAND_TOKEN_ADDRESS: &str = "tland1234567890";
     const STAKING_TOKEN_ADDRESS: &str = "staking1234567890";
+    const WEEK: u64 = 604800;
 
     fn default_instantiate(
         deps: DepsMut,
@@ -675,7 +594,7 @@ mod tests {
             instant_claim_percentage_loss: 0,
             distribution_schedule: Vec::from([
                 Schedule {
-                    amount: Uint128::new(1_000_000_000),
+                    amount: Uint128::new(150_000_000_000),
                     start_time: mock_env().block.time.seconds(),
                     end_time: mock_env().block.time.seconds() + WEEK,
                 }]),
@@ -694,15 +613,22 @@ mod tests {
         let res = query_config(deps.as_ref()).unwrap();
         assert_eq!(INIT_ADMIN, res.owner.as_str());
 
-        let res = query_total(deps.as_ref()).unwrap();
-        assert_eq!(0, res.total.u128());
+        let res = query_state(deps.as_ref()).unwrap();
+        assert_eq!(0, res.total_stake.u128());
 
         let res = query_member(deps.as_ref(), env, USER1.into()).unwrap();
         assert_eq!(None, res.member)
     }
 
-    fn get_member(deps: Deps, addr: String) -> Option<MemberItem> {
-        let raw = query(deps, mock_env(), QueryMsg::Member { addr }).unwrap();
+    fn get_env(height_delta: u64) -> Env {
+        let mut env = mock_env();
+        env.block.height += height_delta;
+        env.block.time = env.block.time.plus_seconds(height_delta * 6);
+        return env;
+    }
+
+    fn get_member(deps: Deps, addr: String) -> Option<MemberResponseItem> {
+        let raw = query(deps, mock_env(), QueryMsg::Member { address: addr }).unwrap();
         let res: MemberResponse = from_slice(&raw).unwrap();
         return res.member;
     }
@@ -710,9 +636,9 @@ mod tests {
     // this tests the member queries
     fn assert_users(
         deps: Deps,
-        user1: Option<MemberItem>,
-        user2: Option<MemberItem>,
-        user3: Option<MemberItem>,
+        user1: Option<MemberResponseItem>,
+        user2: Option<MemberResponseItem>,
+        user3: Option<MemberResponseItem>,
     ) {
         let member1 = get_member(deps, USER1.into());
         assert_eq!(member1, user1);
@@ -725,8 +651,7 @@ mod tests {
     }
 
     fn bond_cw20(mut deps: DepsMut, user1: u128, user2: u128, user3: u128, height_delta: u64) {
-        let mut env = mock_env();
-        env.block.height += height_delta;
+        let env = get_env(height_delta);
 
         for (addr, stake) in &[(USER1, user1), (USER2, user2), (USER3, user3)] {
             if *stake != 0 {
@@ -736,22 +661,36 @@ mod tests {
                     msg: to_binary(&ReceiveMsg::Bond {}).unwrap(),
                 });
                 let info = mock_info(STAKING_TOKEN_ADDRESS, &[]);
-                execute(deps.branch(), env.clone(), info, msg);
+                execute(deps.branch(), env.clone(), info, msg).unwrap();
             }
         }
     }
 
     // this tests the member queries
-    fn assert_stake(deps: Deps, user1_stake: u128, user2_stake: u128, user3_stake: u128) {
-        let env = mock_env();
-        let stake1 = query_member(deps, env.clone(),USER1.into()).unwrap();
-        assert_eq!(stake1.member.unwrap().stake, user1_stake.into());
+    fn assert_stake(deps: Deps, user1_stake: u128, user2_stake: u128, user3_stake: u128, height_delta: u64) {
+        let env = get_env(height_delta);
 
-        let stake2 = query_member(deps, env.clone(),USER2.into()).unwrap();
-        assert_eq!(stake2.member.unwrap().stake, user2_stake.into());
+        let res1 = query_member(deps, env.clone(), USER1.into()).unwrap();
+        assert_eq!(res1.member.unwrap().stake, user1_stake.into());
 
-        let stake3 = query_member(deps, env.clone(),USER3.into()).unwrap();
-        assert_eq!(stake3.member.unwrap().stake, user3_stake.into());
+        let res2 = query_member(deps, env.clone(), USER2.into()).unwrap();
+        assert_eq!(res2.member.unwrap().stake, user2_stake.into());
+
+        let res3 = query_member(deps, env.clone(), USER3.into()).unwrap();
+        assert_eq!(res3.member.unwrap().stake, user3_stake.into());
+    }
+
+    fn assert_rewards(deps: Deps, user1_reward: u128, user2_reward: u128, user3_reward: u128, height_delta: u64) {
+        let env = get_env(height_delta);
+
+        let res1 = query_member(deps, env.clone(), USER1.into()).unwrap();
+        assert_eq!(res1.member.unwrap().reward, user1_reward.into());
+
+        let res2 = query_member(deps, env.clone(), USER2.into()).unwrap();
+        assert_eq!(res2.member.unwrap().reward, user2_reward.into());
+
+        let res3 = query_member(deps, env.clone(), USER3.into()).unwrap();
+        assert_eq!(res3.member.unwrap().reward, user3_reward.into());
     }
 
     #[test]
@@ -762,9 +701,10 @@ mod tests {
         // Assert original staking members
         assert_users(deps.as_ref(), None, None, None);
 
-        bond_cw20(deps.as_mut(), 12_000, 7_500, 4_000, 1);
+        bond_cw20(deps.as_mut(), 12_000, 7_500, 500, 1);
 
-        assert_stake(deps.as_ref(), 12_000, 7_500, 4_000);
+        assert_stake(deps.as_ref(), 12_000, 7_500, 500, 1);
+
+        // unbond_cw20(deps.as_mut(), 6_000, 1_500, 0, 2)
     }
-
 }

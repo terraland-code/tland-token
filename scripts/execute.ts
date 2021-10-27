@@ -3,7 +3,7 @@ import {NetworkConfig} from "./config/network/config";
 import {ExecuteConfig} from "./config/execute/config";
 
 let networkConfig: NetworkConfig = require('./config/network/config.json');
-let config: ExecuteConfig = require('./config/execute/config.json');
+let config: ExecuteConfig = require('./config/execute/unbond.config.json');
 
 // create a key out of a mnemonic
 const mk = new MnemonicKey({

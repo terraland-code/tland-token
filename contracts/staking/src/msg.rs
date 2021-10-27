@@ -1,11 +1,11 @@
-use cosmwasm_std::Uint128;
+use cosmwasm_std::{Decimal, Uint128};
 use cw20::Cw20ReceiveMsg;
 use cw_controllers::Claim;
 pub use cw_controllers::ClaimsResponse;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::state::Schedule;
+use crate::state::{Schedule};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
@@ -71,11 +71,11 @@ pub enum QueryMsg {
     /// Return config
     Config {},
 
-    /// Return total staked tokens
-    Total {},
+    /// Return state
+    State {},
 
     /// Return staker info
-    Member { addr: String },
+    Member { address: String },
 
     /// Return stakers
     ListMembers {
@@ -85,25 +85,26 @@ pub enum QueryMsg {
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-pub struct MemberItem {
-    pub address: String,
+pub struct MemberResponseItem {
     pub stake: Uint128,
     pub reward: Uint128,
+    pub reward_index: Decimal,
     pub withdrawn: Uint128,
     pub claims: Vec<Claim>,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+pub struct MemberListResponseItem {
+    pub address: String,
+    pub info: MemberResponseItem,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
 pub struct MemberResponse {
-    pub member: Option<MemberItem>,
+    pub member: Option<MemberResponseItem>,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
 pub struct MemberListResponse {
-    pub members: Vec<MemberItem>,
-}
-
-#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-pub struct TotalResponse {
-    pub total: Uint128,
+    pub members: Vec<MemberListResponseItem>,
 }
