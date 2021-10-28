@@ -20,13 +20,13 @@ pub struct InstantiateMissionSmartContracts {
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
     UpdateConfig {
-        new_owner: Option<String>,
+        owner: Option<String>,
         mission_smart_contracts: Option<InstantiateMissionSmartContracts>,
     },
     Claim {},
-    RegisterMembers {
-        members: Vec<NewMember>
-    },
+    RegisterMembers (
+        Vec<RegisterMemberItem>
+    ),
     UstWithdraw {
         recipient: String,
         amount: Uint128
@@ -44,17 +44,21 @@ pub enum QueryMsg {
     Member {
         address: String
     },
+    ListMembers {
+        start_after: Option<String>,
+        limit: Option<u32>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-pub struct NewMember {
+pub struct RegisterMemberItem {
     pub address: String,
     pub amount: Uint128,
     pub claimed: Uint128,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
-pub struct MemberStats {
+pub struct MemberResponseItem {
     pub amount: Uint128,
     pub claimed: Uint128,
     pub passed_missions: Missions,
@@ -69,6 +73,17 @@ pub struct Missions {
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+pub struct MemberListResponseItem {
+    pub address: String,
+    pub info: MemberResponseItem,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
 pub struct MemberResponse {
-    pub stats: Option<MemberStats>,
+    pub member: Option<MemberResponseItem>,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+pub struct MemberListResponse {
+    pub members: Vec<MemberListResponseItem>,
 }

@@ -1,18 +1,19 @@
 use std::ops::Div;
 
-use cosmwasm_std::{Addr, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo, QuerierWrapper, Response, StdError, StdResult, SubMsg, to_binary, Uint128, WasmMsg, WasmQuery};
+use cosmwasm_std::{Addr, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo, Order, QuerierWrapper, Response, StdError, StdResult, SubMsg, to_binary, Uint128, WasmMsg, WasmQuery};
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cw0::must_pay;
+use cw0::{maybe_addr, must_pay};
 use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg};
 use cw2::set_contract_version;
+use cw_storage_plus::Bound;
 
 use platform_registry::{PlatformRegistryQueryMsg, AddressBaseInfoResponse};
 use staking::msg::MemberResponse as StakingMemberResponse;
 use staking::msg::QueryMsg as StakingQueryMsg;
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, InstantiateMissionSmartContracts, InstantiateMsg, MemberResponse, MemberStats, Missions, NewMember, QueryMsg};
+use crate::msg::{ExecuteMsg, InstantiateMissionSmartContracts, InstantiateMsg, MemberListResponse, MemberListResponseItem, MemberResponse, MemberResponseItem, Missions, QueryMsg, RegisterMemberItem};
 use crate::state::{CONFIG, Config, Member, MEMBERS, MissionSmartContracts};
 
 // version info for migration info
@@ -71,9 +72,9 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::UpdateConfig { new_owner, mission_smart_contracts } =>
-            execute_update_config(deps, env, info, new_owner, mission_smart_contracts),
-        ExecuteMsg::RegisterMembers { members } =>
+        ExecuteMsg::UpdateConfig { owner, mission_smart_contracts } =>
+            execute_update_config(deps, env, info, owner, mission_smart_contracts),
+        ExecuteMsg::RegisterMembers ( members ) =>
             execute_register_members(deps, env, info, members),
         ExecuteMsg::Claim {} => execute_claim(deps, env, info),
         ExecuteMsg::UstWithdraw { recipient, amount } =>
@@ -96,27 +97,26 @@ pub fn execute_update_config(
         return Err(ContractError::Unauthorized {});
     }
 
-    let owner = option_addr_validate(&deps, &new_owner)?;
-    let mission_sc = mission_smart_contracts_from(&deps, new_mission_smart_contracts)?;
+    let api = deps.api;
+    let new_mission_sc = mission_smart_contracts_from(&deps, new_mission_smart_contracts)?;
 
     CONFIG.update(deps.storage, |mut exists| -> StdResult<_> {
         // update new owner if set
-        if let Some(addr) = owner {
-            exists.owner = addr
+        if let Some(addr) = new_owner {
+            exists.owner = api.addr_validate(&addr)?;
         }
         // update new lp_staking address if set
-        if mission_sc.lp_staking.is_some() {
-            exists.mission_smart_contracts.lp_staking = mission_sc.lp_staking
+        if new_mission_sc.lp_staking.is_some() {
+            exists.mission_smart_contracts.lp_staking = new_mission_sc.lp_staking
         }
         // update new tland_staking address if set
-        if mission_sc.tland_staking.is_some() {
-            exists.mission_smart_contracts.tland_staking = mission_sc.tland_staking
+        if new_mission_sc.tland_staking.is_some() {
+            exists.mission_smart_contracts.tland_staking = new_mission_sc.tland_staking
         }
         // update new platform_registry address if set
-        if mission_sc.platform_registry.is_some() {
-            exists.mission_smart_contracts.platform_registry = mission_sc.platform_registry
+        if new_mission_sc.platform_registry.is_some() {
+            exists.mission_smart_contracts.platform_registry = new_mission_sc.platform_registry
         }
-
         Ok(exists)
     })?;
 
@@ -129,7 +129,7 @@ pub fn execute_register_members(
     deps: DepsMut,
     _env: Env,
     info: MessageInfo,
-    members: Vec<NewMember>,
+    members: Vec<RegisterMemberItem>,
 ) -> Result<Response, ContractError> {
     // authorized owner
     let cfg = CONFIG.load(deps.storage)?;
@@ -164,10 +164,15 @@ pub fn execute_claim(
     let member = MEMBERS.may_load(deps.storage, &info.sender)?;
 
     let amount = match member {
-        Some(m) => {
+        Some(mut member) => {
             // check missions passed by the sender
             let missions = check_missions(&deps.querier, &cfg, &info.sender)?;
-            Ok(calc_claim_amount( &missions, &m)?)
+            // calculate amount to claim based on passed missions
+            let claimed_amount= calc_claim_amount( &missions, &member)?;
+            // update member claimed amount
+            member.claimed += claimed_amount;
+            MEMBERS.save(deps.storage, &info.sender, &member)?;
+            Ok(claimed_amount)
         }
         None => Err(ContractError::MemberNotFound {})
     }?;
@@ -287,6 +292,8 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_binary(&query_config(deps)?),
         QueryMsg::Member { address } => to_binary(&query_member(deps, address)?),
+        QueryMsg::ListMembers {start_after, limit} =>
+            to_binary(&query_member_list(deps, start_after, limit)?),
     }
 }
 
@@ -295,19 +302,58 @@ pub fn query_config(deps: Deps) -> StdResult<Config> {
 }
 
 pub fn query_member(deps: Deps, addr: String) -> StdResult<MemberResponse> {
-    let cfg = CONFIG.load(deps.storage)?;
     let addr = deps.api.addr_validate(&addr)?;
+    let cfg = CONFIG.load(deps.storage)?;
     let member = MEMBERS.may_load(deps.storage, &addr)?;
-    let stats = match member {
-        Some(m) => Some(MemberStats {
+
+    let res: Option<MemberResponseItem> = match member {
+        Some(m) => Some(MemberResponseItem {
             amount: m.amount,
             claimed: m.claimed,
             passed_missions: check_missions(&deps.querier, &cfg, &addr)?,
         }),
         None => None,
     };
-    Ok(MemberResponse { stats })
+
+    Ok(MemberResponse { member: res })
 }
+
+// settings for pagination
+const MAX_LIMIT: u32 = 30;
+const DEFAULT_LIMIT: u32 = 10;
+
+fn query_member_list(
+    deps: Deps,
+    start_after: Option<String>,
+    limit: Option<u32>,
+) -> StdResult<MemberListResponse> {
+    let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
+    let addr = maybe_addr(deps.api, start_after)?;
+    let start = addr.map(|addr| Bound::exclusive(addr.as_ref()));
+
+    let members: StdResult<Vec<_>> = MEMBERS
+        .range(deps.storage, start, None, Order::Ascending)
+        .take(limit)
+        .map(|item| {
+            let (key, m) = item?;
+
+            let addr = deps.api.addr_validate(&String::from_utf8(key)?)?;
+            let cfg = CONFIG.load(deps.storage)?;
+
+            Ok(MemberListResponseItem {
+                address: addr.to_string(),
+                info: MemberResponseItem{
+                    amount: m.amount,
+                    claimed: m.claimed,
+                    passed_missions: check_missions(&deps.querier, &cfg, &addr)?,
+                }
+            })
+        })
+        .collect();
+
+    Ok(MemberListResponse { members: members? })
+}
+
 
 fn check_missions(querier: &QuerierWrapper, cfg: &Config, addr: &Addr) -> StdResult<Missions> {
     let mut missions = Missions {

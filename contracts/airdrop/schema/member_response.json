@@ -3,10 +3,10 @@
   "title": "MemberResponse",
   "type": "object",
   "properties": {
-    "stats": {
+    "member": {
       "anyOf": [
         {
-          "$ref": "#/definitions/MemberStats"
+          "$ref": "#/definitions/MemberResponseItem"
         },
         {
           "type": "null"
@@ -15,7 +15,7 @@
     }
   },
   "definitions": {
-    "MemberStats": {
+    "MemberResponseItem": {
       "type": "object",
       "required": [
         "amount",

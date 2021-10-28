@@ -21,7 +21,7 @@
                 }
               ]
             },
-            "new_owner": {
+            "owner": {
               "type": [
                 "string",
                 "null"
@@ -51,17 +51,9 @@
       ],
       "properties": {
         "register_members": {
-          "type": "object",
-          "required": [
-            "members"
-          ],
-          "properties": {
-            "members": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/NewMember"
-              }
-            }
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RegisterMemberItem"
           }
         }
       },
@@ -140,7 +132,7 @@
         }
       }
     },
-    "NewMember": {
+    "RegisterMemberItem": {
       "type": "object",
       "required": [
         "address",

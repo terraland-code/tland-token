@@ -3,7 +3,7 @@ use std::fs::create_dir_all;
 
 use cosmwasm_schema::{export_schema, remove_schemas, schema_for};
 
-use airdrop::msg::{MemberResponse, ExecuteMsg, InstantiateMsg, QueryMsg};
+use airdrop::msg::{MemberResponse, ExecuteMsg, InstantiateMsg, QueryMsg, MemberListResponse};
 use airdrop::state::Config as ConfigResponse;
 
 fn main() {
@@ -18,4 +18,5 @@ fn main() {
 
     export_schema(&schema_for!(ConfigResponse), &out_dir);
     export_schema(&schema_for!(MemberResponse), &out_dir);
+    export_schema(&schema_for!(MemberListResponse), &out_dir);
 }
