@@ -15,7 +15,7 @@ pub struct Config {
     pub distribution_schedule: Vec<Schedule>,
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+#[derive(Default, Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
 pub struct Schedule {
     pub amount: Uint128,
     pub start_time: u64,
