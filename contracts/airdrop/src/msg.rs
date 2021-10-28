@@ -29,6 +29,7 @@ pub enum ExecuteMsg {
     },
     UstWithdraw {
         recipient: String,
+        amount: Uint128
     },
     TokenWithdraw {
         token: String,

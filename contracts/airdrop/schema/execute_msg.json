@@ -76,9 +76,13 @@
         "ust_withdraw": {
           "type": "object",
           "required": [
+            "amount",
             "recipient"
           ],
           "properties": {
+            "amount": {
+              "$ref": "#/definitions/Uint128"
+            },
             "recipient": {
               "type": "string"
             }

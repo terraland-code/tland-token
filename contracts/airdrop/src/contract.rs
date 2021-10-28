@@ -1,6 +1,6 @@
 use std::ops::Div;
 
-use cosmwasm_std::{Addr, BankMsg, Binary, Deps, DepsMut, Env, MessageInfo, QuerierWrapper, Response, StdError, StdResult, SubMsg, to_binary, Uint128, WasmMsg, WasmQuery};
+use cosmwasm_std::{Addr, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo, QuerierWrapper, Response, StdError, StdResult, SubMsg, to_binary, Uint128, WasmMsg, WasmQuery};
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cw0::must_pay;
@@ -73,10 +73,13 @@ pub fn execute(
     match msg {
         ExecuteMsg::UpdateConfig { new_owner, mission_smart_contracts } =>
             execute_update_config(deps, env, info, new_owner, mission_smart_contracts),
-        ExecuteMsg::RegisterMembers { members } => execute_register_members(deps, env, info, members),
+        ExecuteMsg::RegisterMembers { members } =>
+            execute_register_members(deps, env, info, members),
         ExecuteMsg::Claim {} => execute_claim(deps, env, info),
-        ExecuteMsg::UstWithdraw { recipient } => execute_ust_withdraw(deps, env, info, recipient),
-        ExecuteMsg::TokenWithdraw { token, recipient } => execute_token_withdraw(deps, env, info, token, recipient),
+        ExecuteMsg::UstWithdraw { recipient, amount } =>
+            execute_ust_withdraw(deps, env, info, recipient, amount),
+        ExecuteMsg::TokenWithdraw { token, recipient } =>
+            execute_token_withdraw(deps, env, info, token, recipient),
     }
 }
 
@@ -208,9 +211,10 @@ fn calc_claim_amount(missions : &Missions, member: &Member) -> StdResult<Uint128
 
 pub fn execute_ust_withdraw(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     recipient: String,
+    amount: Uint128,
 ) -> Result<Response, ContractError> {
     // authorized owner
     let cfg = CONFIG.load(deps.storage)?;
@@ -218,13 +222,10 @@ pub fn execute_ust_withdraw(
         return Err(ContractError::Unauthorized {});
     }
 
-    // get ust balance
-    let ust_balance = deps.querier.query_balance(&env.contract.address, "uust")?;
-
     // create message to transfer ust
     let message = SubMsg::new(BankMsg::Send {
         to_address: String::from(deps.api.addr_validate(&recipient)?),
-        amount: vec![ust_balance],
+        amount: vec![Coin{ denom: "uusd".to_string(), amount }],
     });
 
     Ok(Response::new()
@@ -274,7 +275,7 @@ pub fn execute_token_withdraw(
 
 fn must_pay_fee(info: &MessageInfo) -> Result<(), ContractError> {
     // check if 1 UST was send
-    let amount = must_pay(info, "uust")?;
+    let amount = must_pay(info, "uusd")?;
     if amount != Uint128::new(1000000) {
         return Err(ContractError::InvalidFeeAmount {});
     }

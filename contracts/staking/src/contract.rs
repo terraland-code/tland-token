@@ -1,7 +1,7 @@
 use std::cmp;
 use std::ops::{Div, Mul};
 
-use cosmwasm_std::{Addr, BankMsg, Binary, Decimal, Deps, DepsMut, Env, from_slice, MessageInfo, Order, Response, StdError, StdResult, SubMsg, to_binary, Uint128, WasmMsg, WasmQuery};
+use cosmwasm_std::{Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env, from_slice, MessageInfo, Order, Response, StdError, StdResult, SubMsg, to_binary, Uint128, WasmMsg, WasmQuery};
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cw0::{Duration, maybe_addr, must_pay};
@@ -62,8 +62,8 @@ pub fn execute(
         ExecuteMsg::Claim {} => execute_claim(deps, env, info),
         ExecuteMsg::InstantClaim {} => execute_instant_claim(deps, env, info),
         ExecuteMsg::Withdraw {} => execute_withdraw(deps, env, info),
-        ExecuteMsg::UstWithdraw { recipient } =>
-            execute_ust_withdraw(deps, env, info, recipient),
+        ExecuteMsg::UstWithdraw { recipient, amount } =>
+            execute_ust_withdraw(deps, env, info, recipient, amount),
         ExecuteMsg::TokenWithdraw { token, recipient } =>
             execute_token_withdraw(deps, env, info, token, recipient),
     }
@@ -381,6 +381,9 @@ pub fn execute_withdraw(
     env: Env,
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
+    // sender has to pay fee to instant_claim
+    must_pay_fee(&info)?;
+
     let state = STATE.load(deps.storage)?;
     let cfg = CONFIG.load(deps.storage)?;
     let mut member_info = MEMBERS.may_load(deps.storage, &info.sender)?
@@ -424,9 +427,10 @@ pub fn execute_withdraw(
 
 pub fn execute_ust_withdraw(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     recipient: String,
+    amount: Uint128,
 ) -> Result<Response, ContractError> {
     // authorized owner
     let cfg = CONFIG.load(deps.storage)?;
@@ -434,13 +438,10 @@ pub fn execute_ust_withdraw(
         return Err(ContractError::Unauthorized {});
     }
 
-    // get ust balance
-    let ust_balance = deps.querier.query_balance(&env.contract.address, "uust")?;
-
     // create message to transfer ust
     let message = SubMsg::new(BankMsg::Send {
         to_address: String::from(deps.api.addr_validate(&recipient)?),
-        amount: vec![ust_balance],
+        amount: vec![Coin{ denom: "uusd".to_string(), amount }],
     });
 
     Ok(Response::new()
@@ -490,7 +491,7 @@ pub fn execute_token_withdraw(
 
 fn must_pay_fee(info: &MessageInfo) -> Result<(), ContractError> {
     // check if 1 UST was send
-    let amount = must_pay(info, "uust")?;
+    let amount = must_pay(info, "uusd")?;
     if amount != Uint128::new(1000000) {
         return Err(ContractError::InvalidFeeAmount {});
     }
@@ -776,10 +777,24 @@ mod tests {
         bond_cw20(deps.as_mut(), 12_000, 7_500, 500, 1);
 
         unbond(deps.as_mut(), 0, 0, 500, 2,
-               &[Coin{ denom: "uust".to_string(), amount: Uint128::new(1000000) }]);
+               &[Coin{ denom: "uusd".to_string(), amount: Uint128::new(1000000) }]);
 
         assert_stake(deps.as_ref(), 12_000, 7_500, 0, 2);
 
         assert_rewards(deps.as_ref(), 892_854, 558_033, 37_202, 2);
+    }
+
+    #[test]
+    fn withdraw_reward() {
+        let mut deps = mock_dependencies(&[]);
+        default_instantiate(deps.as_mut());
+
+        bond_cw20(deps.as_mut(), 12_000, 7_500, 500, 1);
+
+        let env = get_env(2);
+        let msg = ExecuteMsg::Withdraw {};
+        let info = mock_info(USER1,
+                             &[Coin{ denom: "uusd".to_string(), amount: Uint128::new(1000000) }]);
+        execute(deps.as_mut().branch(), env.clone(), info, msg).unwrap();
     }
 }

@@ -50,6 +50,7 @@ pub enum ExecuteMsg {
     /// Withdraw ust from smart contract by owner
     UstWithdraw {
         recipient: String,
+        amount: Uint128,
     },
     /// Withdraw tokens from smart contract by owner
     TokenWithdraw {
