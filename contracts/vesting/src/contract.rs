@@ -1,4 +1,3 @@
-
 use cosmwasm_std::{BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo, Order, Response, StdResult, SubMsg, to_binary, Uint128, WasmMsg, WasmQuery};
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
@@ -360,4 +359,156 @@ fn query_member_list(
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use cosmwasm_std::{Deps, DepsMut, Env, Uint128};
+    use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
+
+    use crate::contract::{execute, instantiate, query_config, query_member};
+    use crate::msg::{ExecuteMsg, InstantiateMsg, MemberResponseItem, RegisterMemberItem};
+    use crate::state::Vesting;
+
+    const INIT_ADMIN: &str = "admin";
+    const USER1: &str = "somebody";
+    const USER2: &str = "else";
+    const TERRALAND_TOKEN_ADDRESS: &str = "tland1234567890";
+    const NAME: &str = "VESTING";
+    const WEEK: u64 = 604800;
+
+    fn default_instantiate(
+        deps: DepsMut,
+        env: Env,
+    ) {
+        let msg = InstantiateMsg {
+            owner: INIT_ADMIN.into(),
+            terraland_token: TERRALAND_TOKEN_ADDRESS.into(),
+            name: "VESTING".to_string(),
+            fee_config: vec![],
+            vesting: Vesting {
+                start_time: env.block.time.seconds(),
+                end_time: env.block.time.seconds() + 10 * WEEK,
+                initial_percentage: 10,
+                cliff_end_time: env.block.time.seconds() + WEEK,
+            },
+        };
+        let info = mock_info("creator", &[]);
+        instantiate(deps, env, info, msg).unwrap();
+    }
+
+    #[test]
+    fn proper_instantiation() {
+        let mut deps = mock_dependencies(&[]);
+        let env = mock_env();
+        default_instantiate(deps.as_mut(), mock_env());
+
+        // it worked, let's query the state
+        let res = query_config(deps.as_ref()).unwrap();
+        assert_eq!(INIT_ADMIN, res.owner.as_str());
+        assert_eq!(NAME, res.name.as_str());
+
+        let res = query_member(deps.as_ref(), USER1.into(), env.block.time.seconds()).unwrap();
+        assert_eq!(None, res.member)
+    }
+
+    fn get_env(height_delta: u64) -> Env {
+        let mut env = mock_env();
+        env.block.height += height_delta;
+        env.block.time = env.block.time.plus_seconds(height_delta * 6);
+        return env;
+    }
+
+    fn assert_users(
+        deps: Deps,
+        env: Env,
+        user1: Option<MemberResponseItem>,
+        user2: Option<MemberResponseItem>,
+    ) {
+        let member1 = query_member(deps, USER1.into(), env.block.time.seconds()).unwrap();
+        assert_eq!(member1.member, user1);
+
+        let member2 = query_member(deps, USER2.into(), env.block.time.seconds()).unwrap();
+        assert_eq!(member2.member, user2);
+    }
+
+    fn register_members(mut deps: DepsMut, user1: u128, user2: u128) {
+        let env = mock_env();
+
+        for (addr, amount) in &[(USER1, user1), (USER2, user2)] {
+            if *amount != 0 {
+                let msg = ExecuteMsg::RegisterMembers(Vec::from([
+                    RegisterMemberItem {
+                        address: addr.to_string(),
+                        amount: Uint128::new(*amount),
+                        claimed: None,
+                    }]));
+                let info = mock_info(INIT_ADMIN, &[]);
+                execute(deps.branch(), env.clone(), info, msg).unwrap();
+            }
+        }
+    }
+
+    fn assert_available_to_claim(deps: Deps, user1_stake: u128, user2_stake: u128, height_delta: u64) {
+        let env = get_env(height_delta);
+
+        let res1 = query_member(deps,  USER1.into(), env.block.time.seconds()).unwrap();
+        assert_eq!(res1.member.unwrap().available_to_claim, user1_stake.into());
+
+        let res2 = query_member(deps,  USER2.into(), env.block.time.seconds()).unwrap();
+        assert_eq!(res2.member.unwrap().available_to_claim, user2_stake.into());
+    }
+
+    fn assert_claimed(deps: Deps, user1_stake: u128, user2_stake: u128, height_delta: u64) {
+        let env = get_env(height_delta);
+
+        let res1 = query_member(deps,  USER1.into(), env.block.time.seconds()).unwrap();
+        assert_eq!(res1.member.unwrap().claimed, user1_stake.into());
+
+        let res2 = query_member(deps,  USER2.into(), env.block.time.seconds()).unwrap();
+        assert_eq!(res2.member.unwrap().claimed, user2_stake.into());
+    }
+
+    fn assert_amount(deps: Deps, user1_stake: u128, user2_stake: u128, height_delta: u64) {
+        let env = get_env(height_delta);
+
+        let res1 = query_member(deps,  USER1.into(), env.block.time.seconds()).unwrap();
+        assert_eq!(res1.member.unwrap().amount, user1_stake.into());
+
+        let res2 = query_member(deps,  USER2.into(), env.block.time.seconds()).unwrap();
+        assert_eq!(res2.member.unwrap().amount, user2_stake.into());
+    }
+
+    #[test]
+    fn register_members_and_claim() {
+        let mut deps = mock_dependencies(&[]);
+        default_instantiate(deps.as_mut(), mock_env());
+
+        // Assert original staking members
+        assert_users(deps.as_ref(), mock_env(), None, None);
+
+        // Register 2 members with amounts for vesting
+        register_members(deps.as_mut(), 1_000_000, 5_000_000);
+
+        assert_amount(deps.as_ref(), 1_000_000, 5_000_000, 0);
+        assert_claimed(deps.as_ref(), 0, 0, 0);
+        assert_available_to_claim(deps.as_ref(), 100_000, 500_000, 0);
+
+        // available_to_claim keeps const until clif ends
+        assert_available_to_claim(deps.as_ref(), 100_000, 500_000, 100800);
+        // the daily increase happens
+        assert_available_to_claim(deps.as_ref(), 114_285, 571_428, 115200);
+        assert_available_to_claim(deps.as_ref(), 114_285, 571_428, 115200);
+        assert_available_to_claim(deps.as_ref(), 128_571, 642_857, 129600);
+        // ... until end of vesting
+        assert_available_to_claim(deps.as_ref(), 1_000_000, 5_000_000, 1008000);
+        assert_available_to_claim(deps.as_ref(), 1_000_000, 5_000_000, 10080000);
+
+        // claim
+        let env = get_env(100800);
+        let msg = ExecuteMsg::Claim{};
+        let info = mock_info(USER1, &[]);
+        execute(deps.as_mut().branch(), env.clone(), info, msg).unwrap();
+
+        // check available_to_claim and claimed
+        assert_available_to_claim(deps.as_ref(), 0, 500_000, 100800);
+        assert_claimed(deps.as_ref(), 100_000, 0, 100800);
+    }
+}
