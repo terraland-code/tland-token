@@ -17,6 +17,8 @@ use crate::state::{CLAIMS, Config, CONFIG, MemberInfo, MEMBERS, State, STATE};
 const CONTRACT_NAME: &str = "crates.io:fcq-staking";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+const YEAR_IN_SEC: u64 = 365*24*3600;
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
@@ -194,12 +196,16 @@ fn compute_reward_index(cfg: &Config, state: &State, time: u64) -> StdResult<Dec
 
     // if we are outside distribution schedule then Error
     let (i, j) = find_distribution_schedule_range(
-        &cfg, state.last_updated, time)?;
+        &cfg, state.last_updated, time);
 
     let mut distributed_amount = Uint128::zero();
 
     for id in i..=j {
-        let schedule = &cfg.distribution_schedule[id];
+        if id < 0 || id >= cfg.distribution_schedule.len() as i32 {
+            continue;
+        }
+
+        let schedule = &cfg.distribution_schedule[id as usize];
 
         // compute distributed amount per second for current schedule
         let distributed_amount_per_sec = schedule.amount
@@ -218,24 +224,25 @@ fn compute_reward_index(cfg: &Config, state: &State, time: u64) -> StdResult<Dec
     Ok(res)
 }
 
-fn find_distribution_schedule_range(cfg: &Config, start_time: u64, end_time: u64) -> StdResult<(usize, usize)> {
-    let mut start: Option<usize> = None;
-    let mut end: Option<usize> = None;
+fn find_distribution_schedule_range(cfg: &Config, start_time: u64, end_time: u64) -> (i32, i32) {
+    let mut start = -1;
+    let mut end = -1;
 
     for (i, schedule) in cfg.distribution_schedule.iter().enumerate() {
         if start_time >= schedule.start_time && start_time < schedule.end_time {
-            start = Some(i)
+            start = i as i32
+        } else if start_time >= schedule.end_time {
+            start = (i + 1) as i32
         }
+
         if end_time >= schedule.start_time && end_time < schedule.end_time {
-            end = Some(i)
+            end = i as i32
+        } else if start_time >= schedule.end_time {
+            end = (i + 1) as i32
         }
     }
 
-    if start.is_none() || end.is_none() {
-        return Err(StdError::not_found("distribution_schedule"));
-    }
-
-    Ok((start.unwrap(), end.unwrap()))
+    (start, end)
 }
 
 fn compute_member_reward(member_info: &MemberInfo, global_reward_index: Decimal) -> Uint128 {
@@ -332,7 +339,7 @@ pub fn execute_instant_claim(
 
     // Create block after unbonding_period to be able to release all claims
     let mut block = env.block.clone();
-    block.time = block.time.plus_seconds(config.unbonding_period);
+    block.time = block.time.plus_seconds(YEAR_IN_SEC);
 
     // get amount of tokens to release
     let mut release = CLAIMS.claim_tokens(deps.storage, &info.sender, &block, None)?;
@@ -389,7 +396,7 @@ pub fn execute_withdraw(
     let mut member_info = MEMBERS.may_load(deps.storage, &info.sender)?
         .unwrap_or(Default::default());
 
-    // calculate member reward until current block
+    // calculate member reward until current block or end of distribution
     update_member_reward(&state, &cfg, env.block.time.seconds(), &mut member_info)?;
 
     // amount to withdraw is difference between the reward and the withdraw amount
@@ -606,6 +613,7 @@ mod tests {
 
     fn default_instantiate(
         deps: DepsMut,
+        env: Env
     ) {
         let msg = InstantiateMsg {
             owner: INIT_ADMIN.into(),
@@ -617,25 +625,25 @@ mod tests {
             distribution_schedule: Vec::from([
                 Schedule {
                     amount: Uint128::new(150_000_000_000),
-                    start_time: mock_env().block.time.seconds(),
-                    end_time: mock_env().block.time.seconds() + WEEK,
+                    start_time: env.block.time.seconds(),
+                    end_time: env.block.time.seconds() + WEEK,
                 },
                 Schedule {
                     amount: Uint128::new(100_000_000_000),
-                    start_time: mock_env().block.time.seconds() + WEEK,
-                    end_time: mock_env().block.time.seconds() + 2 * WEEK,
+                    start_time: env.block.time.seconds() + WEEK,
+                    end_time: env.block.time.seconds() + 2 * WEEK,
                 }
             ]),
         };
         let info = mock_info("creator", &[]);
-        instantiate(deps, mock_env(), info, msg).unwrap();
+        instantiate(deps, env, info, msg).unwrap();
     }
 
     #[test]
     fn proper_instantiation() {
         let mut deps = mock_dependencies(&[]);
         let env = mock_env();
-        default_instantiate(deps.as_mut());
+        default_instantiate(deps.as_mut(), mock_env());
 
         // it worked, let's query the state
         let res = query_config(deps.as_ref()).unwrap();
@@ -738,7 +746,7 @@ mod tests {
     #[test]
     fn cw20_token_bond() {
         let mut deps = mock_dependencies(&[]);
-        default_instantiate(deps.as_mut());
+        default_instantiate(deps.as_mut(), mock_env());
 
         // Assert original staking members
         assert_users(deps.as_ref(), None, None, None);
@@ -760,7 +768,7 @@ mod tests {
     #[test]
     fn cw20_token_bond_on_distribution_schedules_edge() {
         let mut deps = mock_dependencies(&[]);
-        default_instantiate(deps.as_mut());
+        default_instantiate(deps.as_mut(), mock_env());
 
         // bond 1 block before end of first distribution schedule
         bond_cw20(deps.as_mut(), 10, 0, 0, 100799);
@@ -770,9 +778,40 @@ mod tests {
     }
 
     #[test]
+    fn cw20_token_bond_before_distribution_start() {
+        let mut deps = mock_dependencies(&[]);
+        default_instantiate(deps.as_mut(), get_env(10));
+
+        // bond 9 block before start of distribution, the reward should be 0 until distribution start
+        bond_cw20(deps.as_mut(), 10, 10, 10, 1);
+        assert_rewards(deps.as_ref(), 0, 0, 0, 5);
+        assert_rewards(deps.as_ref(), 0, 0, 0, 10);
+
+        // rewart is calculated after distribution start
+        assert_rewards(deps.as_ref(), 496030, 496030, 496030, 11);
+        assert_rewards(deps.as_ref(), 992060, 992060, 992060, 12);
+    }
+
+    #[test]
+    fn cw20_token_bond_after_distribution_end() {
+        let mut deps = mock_dependencies(&[]);
+        default_instantiate(deps.as_mut(), mock_env());
+
+        // bond 1 block before end of first distribution
+        bond_cw20(deps.as_mut(), 10, 10, 10, 201599);
+        assert_rewards(deps.as_ref(), 330686, 330686, 330686, 201600);
+
+        // bond after the end of distribution - it will not change the rewards
+        bond_cw20(deps.as_mut(), 1000, 1000, 1000, 201601);
+        assert_stake(deps.as_ref(), 1010, 1010, 1010, 201601);
+        assert_rewards(deps.as_ref(), 330686, 330686, 330686, 201601);
+        assert_rewards(deps.as_ref(), 330686, 330686, 330686, 301800);
+    }
+
+    #[test]
     fn cw20_token_unbond() {
         let mut deps = mock_dependencies(&[]);
-        default_instantiate(deps.as_mut());
+        default_instantiate(deps.as_mut(), mock_env());
 
         bond_cw20(deps.as_mut(), 12_000, 7_500, 500, 1);
 
@@ -787,7 +826,7 @@ mod tests {
     #[test]
     fn withdraw_reward() {
         let mut deps = mock_dependencies(&[]);
-        default_instantiate(deps.as_mut());
+        default_instantiate(deps.as_mut(), mock_env());
 
         bond_cw20(deps.as_mut(), 12_000, 7_500, 500, 1);
 
