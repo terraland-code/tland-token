@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InstantiateMsg",
+  "type": "object",
+  "required": [
+    "owner",
+    "terraland_token"
+  ],
+  "properties": {
+    "mission_smart_contracts": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/InstantiateMissionSmartContracts"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "owner": {
+      "type": "string"
+    },
+    "terraland_token": {
+      "type": "string"
+    }
+  },
+  "definitions": {
+    "InstantiateMissionSmartContracts": {
+      "type": "object",
+      "properties": {
+        "lp_staking": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "platform_registry": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tland_staking": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

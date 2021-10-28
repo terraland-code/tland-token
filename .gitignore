@@ -19,3 +19,7 @@
 hash.txt
 contracts.txt
 artifacts/
+
+# configuration
+config.json
+*.config.json

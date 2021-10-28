@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AddressBaseInfoResponse",
+  "type": "object",
+  "required": [
+    "is_property_shareholder",
+    "is_registered"
+  ],
+  "properties": {
+    "is_property_shareholder": {
+      "type": "boolean"
+    },
+    "is_registered": {
+      "type": "boolean"
+    }
+  }
+}

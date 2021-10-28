@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PlatformRegistryQueryMsg",
+  "oneOf": [
+    {
+      "description": "Returns whether the address is registered and has estate shares",
+      "type": "object",
+      "required": [
+        "address_base_info"
+      ],
+      "properties": {
+        "address_base_info": {
+          "type": "object",
+          "required": [
+            "address"
+          ],
+          "properties": {
+            "address": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}
