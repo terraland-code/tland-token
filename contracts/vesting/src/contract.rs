@@ -360,12 +360,12 @@ fn query_member_list(
 
 #[cfg(test)]
 mod tests {
-    use cosmwasm_std::{Deps, DepsMut, Env, Uint128};
+    use cosmwasm_std::{Coin, Deps, DepsMut, Env, Uint128};
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
 
     use crate::contract::{execute, instantiate, query_config, query_member};
     use crate::msg::{ExecuteMsg, InstantiateMsg, MemberResponseItem, RegisterMemberItem};
-    use crate::state::Vesting;
+    use crate::state::{FeeConfig, Vesting};
 
     const INIT_ADMIN: &str = "admin";
     const USER1: &str = "somebody";
@@ -373,6 +373,8 @@ mod tests {
     const TERRALAND_TOKEN_ADDRESS: &str = "tland1234567890";
     const NAME: &str = "VESTING";
     const WEEK: u64 = 604800;
+    const FEE: Uint128 = Uint128::new(1000000);
+    const FEE_DENOM: &str = "uusd";
 
     fn default_instantiate(
         deps: DepsMut,
@@ -382,7 +384,11 @@ mod tests {
             owner: INIT_ADMIN.into(),
             terraland_token: TERRALAND_TOKEN_ADDRESS.into(),
             name: "VESTING".to_string(),
-            fee_config: vec![],
+            fee_config: Vec::from([FeeConfig{
+                fee: FEE,
+                operation: "claim".to_string(),
+                denom: FEE_DENOM.to_string(),
+            }]),
             vesting: Vesting {
                 start_time: env.block.time.seconds(),
                 end_time: env.block.time.seconds() + 10 * WEEK,
@@ -504,7 +510,7 @@ mod tests {
         // claim
         let env = get_env(100800);
         let msg = ExecuteMsg::Claim{};
-        let info = mock_info(USER1, &[]);
+        let info = mock_info(USER1, &[Coin{ denom: FEE_DENOM.to_string(), amount: FEE}]);
         execute(deps.as_mut().branch(), env.clone(), info, msg).unwrap();
 
         // check available_to_claim and claimed
