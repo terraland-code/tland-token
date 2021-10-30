@@ -33,11 +33,15 @@
       "type": "object",
       "required": [
         "amount",
+        "available_to_claim",
         "claimed",
         "passed_missions"
       ],
       "properties": {
         "amount": {
+          "$ref": "#/definitions/Uint128"
+        },
+        "available_to_claim": {
           "$ref": "#/definitions/Uint128"
         },
         "claimed": {

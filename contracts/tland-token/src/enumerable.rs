@@ -69,6 +69,7 @@ mod tests {
     // this will set up the instantiation for other tests
     fn do_instantiate(mut deps: DepsMut, addr: &str, amount: Uint128) -> TokenInfoResponse {
         let instantiate_msg = InstantiateMsg {
+            owner: "OWNER".to_string(),
             name: "Auto Gen".to_string(),
             symbol: "AUTO".to_string(),
             decimals: 3,
@@ -76,7 +77,6 @@ mod tests {
                 address: addr.into(),
                 amount,
             }],
-            mint: None,
             marketing: None,
         };
         let info = mock_info("creator", &[]);

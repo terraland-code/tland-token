@@ -5,7 +5,7 @@ use cosmwasm_std::{Addr, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo,
 use cosmwasm_std::entry_point;
 use cw0::{maybe_addr, must_pay};
 use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg};
-use cw2::set_contract_version;
+use cw2::{get_contract_version, set_contract_version};
 use cw_storage_plus::Bound;
 
 use platform_registry::{PlatformRegistryQueryMsg, AddressBaseInfoResponse};
@@ -13,8 +13,8 @@ use staking::msg::MemberResponse as StakingMemberResponse;
 use staking::msg::QueryMsg as StakingQueryMsg;
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, InstantiateMissionSmartContracts, InstantiateMsg, MemberListResponse, MemberListResponseItem, MemberResponse, MemberResponseItem, Missions, QueryMsg, RegisterMemberItem};
-use crate::state::{CONFIG, Config, Member, MEMBERS, MissionSmartContracts};
+use crate::msg::{ExecuteMsg, InstantiateMissionSmartContracts, InstantiateMsg, MemberListResponse, MemberListResponseItem, MemberResponse, MemberResponseItem, MigrateMsg, Missions, QueryMsg, RegisterMemberItem};
+use crate::state::{CONFIG, Config, FeeConfig, Member, MEMBERS, MissionSmartContracts};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:airdrop";
@@ -32,6 +32,7 @@ pub fn instantiate(
     let config = Config {
         owner: deps.api.addr_validate(&msg.owner)?,
         terraland_token: deps.api.addr_validate(&msg.terraland_token)?,
+        fee_config: msg.fee_config,
         mission_smart_contracts: mission_smart_contracts_from(&deps, msg.mission_smart_contracts)?,
     };
 
@@ -65,6 +66,17 @@ fn option_addr_validate(deps: &DepsMut, value: &Option<String>) -> StdResult<Opt
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
+pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
+    let version = get_contract_version(deps.storage)?;
+    if version.contract != CONTRACT_NAME {
+        return Err(ContractError::CannotMigrate {
+            previous_contract: version.contract,
+        });
+    }
+    Ok(Response::default())
+}
+
+#[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(
     deps: DepsMut,
     env: Env,
@@ -72,8 +84,8 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::UpdateConfig { owner, mission_smart_contracts } =>
-            execute_update_config(deps, env, info, owner, mission_smart_contracts),
+        ExecuteMsg::UpdateConfig { owner, fee_config, mission_smart_contracts } =>
+            execute_update_config(deps, env, info, owner, fee_config,mission_smart_contracts),
         ExecuteMsg::RegisterMembers ( members ) =>
             execute_register_members(deps, env, info, members),
         ExecuteMsg::Claim {} => execute_claim(deps, env, info),
@@ -89,6 +101,7 @@ pub fn execute_update_config(
     _env: Env,
     info: MessageInfo,
     new_owner: Option<String>,
+    new_fee_config: Option<Vec<FeeConfig>>,
     new_mission_smart_contracts: Option<InstantiateMissionSmartContracts>,
 ) -> Result<Response, ContractError> {
     // authorized owner
@@ -100,24 +113,27 @@ pub fn execute_update_config(
     let api = deps.api;
     let new_mission_sc = mission_smart_contracts_from(&deps, new_mission_smart_contracts)?;
 
-    CONFIG.update(deps.storage, |mut exists| -> StdResult<_> {
+    CONFIG.update(deps.storage, |mut existing_config| -> StdResult<_> {
         // update new owner if set
         if let Some(addr) = new_owner {
-            exists.owner = api.addr_validate(&addr)?;
+            existing_config.owner = api.addr_validate(&addr)?;
+        }
+        if let Some(fee_config) = new_fee_config {
+            existing_config.fee_config = fee_config;
         }
         // update new lp_staking address if set
         if new_mission_sc.lp_staking.is_some() {
-            exists.mission_smart_contracts.lp_staking = new_mission_sc.lp_staking
+            existing_config.mission_smart_contracts.lp_staking = new_mission_sc.lp_staking
         }
         // update new tland_staking address if set
         if new_mission_sc.tland_staking.is_some() {
-            exists.mission_smart_contracts.tland_staking = new_mission_sc.tland_staking
+            existing_config.mission_smart_contracts.tland_staking = new_mission_sc.tland_staking
         }
         // update new platform_registry address if set
         if new_mission_sc.platform_registry.is_some() {
-            exists.mission_smart_contracts.platform_registry = new_mission_sc.platform_registry
+            existing_config.mission_smart_contracts.platform_registry = new_mission_sc.platform_registry
         }
-        Ok(exists)
+        Ok(existing_config)
     })?;
 
     Ok(Response::new()
@@ -157,10 +173,11 @@ pub fn execute_claim(
     _env: Env,
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
-    // sender has to pay 1 UST to claim
-    must_pay_fee(&info)?;
-
     let cfg = CONFIG.load(deps.storage)?;
+
+    // sender has to pay 1 UST to claim
+    must_pay_fee(&info, &cfg, "claim".to_string())?;
+
     let member = MEMBERS.may_load(deps.storage, &info.sender)?;
 
     let amount = match member {
@@ -168,11 +185,11 @@ pub fn execute_claim(
             // check missions passed by the sender
             let missions = check_missions(&deps.querier, &cfg, &info.sender)?;
             // calculate amount to claim based on passed missions
-            let claimed_amount= calc_claim_amount( &missions, &member)?;
+            let available_to_claim= calc_claim_amount( &missions, &member)?;
             // update member claimed amount
-            member.claimed += claimed_amount;
+            member.claimed += available_to_claim;
             MEMBERS.save(deps.storage, &info.sender, &member)?;
-            Ok(claimed_amount)
+            Ok(available_to_claim)
         }
         None => Err(ContractError::MemberNotFound {})
     }?;
@@ -278,12 +295,27 @@ pub fn execute_token_withdraw(
         .add_attribute("sender", info.sender))
 }
 
-fn must_pay_fee(info: &MessageInfo) -> Result<(), ContractError> {
-    // check if 1 UST was send
-    let amount = must_pay(info, "uusd")?;
-    if amount != Uint128::new(1000000) {
+fn must_pay_fee(info: &MessageInfo, cfg: &Config, operation: String) -> Result<(), ContractError> {
+    let mut denom = "".to_string();
+    let mut fee_amount = Uint128::zero();
+
+    for fee_config in cfg.fee_config.iter() {
+        if fee_config.operation == operation {
+            fee_amount = fee_config.fee;
+            denom = fee_config.denom.clone();
+        }
+    }
+
+    if fee_amount == Uint128::zero() {
+        return Ok(());
+    }
+
+    // check if exact fee amount was send
+    let amount = must_pay(info, denom.as_str())?;
+    if amount != fee_amount {
         return Err(ContractError::InvalidFeeAmount {});
     }
+
     Ok(())
 }
 
@@ -307,11 +339,17 @@ pub fn query_member(deps: Deps, addr: String) -> StdResult<MemberResponse> {
     let member = MEMBERS.may_load(deps.storage, &addr)?;
 
     let res: Option<MemberResponseItem> = match member {
-        Some(m) => Some(MemberResponseItem {
-            amount: m.amount,
-            claimed: m.claimed,
-            passed_missions: check_missions(&deps.querier, &cfg, &addr)?,
-        }),
+        Some(m) => {
+            let passed_missions = check_missions(&deps.querier, &cfg, &addr)?;
+            let available_to_claim= calc_claim_amount(&passed_missions, &m)?;
+
+            Some(MemberResponseItem {
+                amount: m.amount,
+                available_to_claim,
+                claimed: m.claimed,
+                passed_missions,
+            })
+        },
         None => None,
     };
 
@@ -340,12 +378,16 @@ fn query_member_list(
             let addr = deps.api.addr_validate(&String::from_utf8(key)?)?;
             let cfg = CONFIG.load(deps.storage)?;
 
+            let passed_missions = check_missions(&deps.querier, &cfg, &addr)?;
+            let available_to_claim= calc_claim_amount(&passed_missions, &m)?;
+
             Ok(MemberListResponseItem {
                 address: addr.to_string(),
                 info: MemberResponseItem{
                     amount: m.amount,
+                    available_to_claim,
                     claimed: m.claimed,
-                    passed_missions: check_missions(&deps.querier, &cfg, &addr)?,
+                    passed_missions,
                 }
             })
         })

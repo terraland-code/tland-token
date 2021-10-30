@@ -1,9 +1,8 @@
-use cosmwasm_std::{StdError, StdResult, Uint128};
-use cw20::{Cw20Coin, Logo, MinterResponse};
+use cosmwasm_std::{StdError, StdResult, Uint128, Binary};
+use cw20::{Cw20Coin, Logo};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-
-pub use cw20::Cw20ExecuteMsg as ExecuteMsg;
+use cw0::Expiration;
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
 pub struct InstantiateMarketingInfo {
@@ -15,19 +14,15 @@ pub struct InstantiateMarketingInfo {
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
 pub struct InstantiateMsg {
+    pub owner: String,
     pub name: String,
     pub symbol: String,
     pub decimals: u8,
     pub initial_balances: Vec<Cw20Coin>,
-    pub mint: Option<MinterResponse>,
     pub marketing: Option<InstantiateMarketingInfo>,
 }
 
 impl InstantiateMsg {
-    pub fn get_cap(&self) -> Option<Uint128> {
-        self.mint.as_ref().and_then(|v| v.cap)
-    }
-
     pub fn validate(&self) -> StdResult<()> {
         // Check name, symbol, decimals
         if !is_valid_name(&self.name) {
@@ -77,10 +72,6 @@ pub enum QueryMsg {
     /// Returns metadata on the contract - name, decimals, supply, etc.
     /// Return type: TokenInfoResponse.
     TokenInfo {},
-    /// Only with "mintable" extension.
-    /// Returns who can mint and the hard cap on maximum tokens after minting.
-    /// Return type: MinterResponse.
-    Minter {},
     /// Only with "allowance" extension.
     /// Returns how much spender can use from owner account, 0 if unset.
     /// Return type: AllowanceResponse.
@@ -111,3 +102,68 @@ pub enum QueryMsg {
     /// Return type: DownloadLogoResponse.
     DownloadLogo {},
 }
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecuteMsg {
+    /// Transfer is a base message to move tokens to another account without triggering actions
+    Transfer { recipient: String, amount: Uint128 },
+    /// Burn is a base message to destroy tokens forever
+    Burn { amount: Uint128 },
+    /// Send is a base message to transfer tokens to a contract and trigger an action
+    /// on the receiving contract.
+    Send {
+        contract: String,
+        amount: Uint128,
+        msg: Binary,
+    },
+    /// Only with "approval" extension. Allows spender to access an additional amount tokens
+    /// from the owner's (env.sender) account. If expires is Some(), overwrites current allowance
+    /// expiration with this one.
+    IncreaseAllowance {
+        spender: String,
+        amount: Uint128,
+        expires: Option<Expiration>,
+    },
+    /// Only with "approval" extension. Lowers the spender's access of tokens
+    /// from the owner's (env.sender) account by amount. If expires is Some(), overwrites current
+    /// allowance expiration with this one.
+    DecreaseAllowance {
+        spender: String,
+        amount: Uint128,
+        expires: Option<Expiration>,
+    },
+    /// Only with "approval" extension. Transfers amount tokens from owner -> recipient
+    /// if `env.sender` has sufficient pre-approval.
+    TransferFrom {
+        owner: String,
+        recipient: String,
+        amount: Uint128,
+    },
+    /// Only with "approval" extension. Sends amount tokens from owner -> contract
+    /// if `env.sender` has sufficient pre-approval.
+    SendFrom {
+        owner: String,
+        contract: String,
+        amount: Uint128,
+        msg: Binary,
+    },
+    /// Only with "approval" extension. Destroys tokens forever
+    BurnFrom { owner: String, amount: Uint128 },
+    /// Only with the "marketing" extension. If authorized, updates marketing metadata.
+    /// Setting None/null for any of these will leave it unchanged.
+    /// Setting Some("") will clear this field on the contract storage
+    UpdateMarketing {
+        /// A URL pointing to the project behind this token.
+        project: Option<String>,
+        /// A longer description of the token and it's utility. Designed for tooltips or such
+        description: Option<String>,
+        /// The address (if any) who can update this data structure
+        marketing: Option<String>,
+    },
+    /// If set as the "marketing" role on the contract, upload a new URL, SVG, or PNG for the token
+    UploadLogo(Logo),
+}
+
+
+

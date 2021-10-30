@@ -1,18 +1,20 @@
 import {LCDClient, MnemonicKey, isTxError, MsgExecuteContract} from '@terra-money/terra.js';
-import { config } from './config/network/config.json';
+import {NetworkConfig} from "./config/network/config";
+
+let networkConfig: NetworkConfig = require('./config/network/config.json');
 
 const token_address = "terra18nuhtf4ajudu7hvslxf87cw7e4djdejwtqfe6u";
 const terraswap_factory_address = "terra18qpjm4zkvqnpjpw0zn0tdr8gdzvt8au35v45xf";
 
 // create a key out of a mnemonic
 const mk = new MnemonicKey({
-    mnemonic: config.mnemonic,
+    mnemonic: networkConfig.mnemonic,
 });
 
 // connect to tequila testnet
 const terra = new LCDClient({
-    URL: 'https://bombay-lcd.terra.dev',
-    chainID: 'bombay-12'
+    URL: networkConfig.url,
+    chainID: networkConfig.chainID
 });
 
 const wallet = terra.wallet(mk);

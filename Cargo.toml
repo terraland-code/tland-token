@@ -1,7 +1,19 @@
 [workspace]
 members = ["contracts/*"]
 
-[profile.release.package.fcqn]
+[profile.release.package.tland-token]
+codegen-units = 1
+incremental = false
+
+[profile.release.package.staking]
+codegen-units = 1
+incremental = false
+
+[profile.release.package.airdrop]
+codegen-units = 1
+incremental = false
+
+[profile.release.package.vesting]
 codegen-units = 1
 incremental = false
 

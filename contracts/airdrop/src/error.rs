@@ -21,4 +21,7 @@ pub enum ContractError {
 
     #[error("Invalid fee amount")]
     InvalidFeeAmount {},
+
+    #[error("Cannot migrate from different contract type: {previous_contract}")]
+    CannotMigrate { previous_contract: String },
 }

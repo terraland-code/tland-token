@@ -3,7 +3,7 @@ import {NetworkConfig} from "./config/network/config";
 import {InstantiateConfig} from "./config/instantiate/config";
 
 let networkConfig: NetworkConfig = require('./config/network/config.json');
-let config: InstantiateConfig = require('./config/instantiate/config.json');
+let config: InstantiateConfig = require('./config/instantiate/airdrop.config.json');
 
 // create a key out of a mnemonic
 const mk = new MnemonicKey({
@@ -21,7 +21,7 @@ const wallet = terra.wallet(mk);
 async function Deploy() {
     const instantiate = new MsgInstantiateContract(
         wallet.key.accAddress, // sender
-        undefined, // admin
+        wallet.key.accAddress, // admin
         config.codeID,
         config.msg, // InitMsg
         undefined, // init coins

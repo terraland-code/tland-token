@@ -1,5 +1,5 @@
 [package]
-name = "fcqn"
+name = "tland-token"
 version = "0.1.0"
 authors = ["Jerzy Lasyk <jerzy.lasyk@gmail.com>"]
 edition = "2018"

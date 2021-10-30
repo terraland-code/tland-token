@@ -11,6 +11,15 @@
         "update_config": {
           "type": "object",
           "properties": {
+            "fee_config": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/definitions/FeeConfig"
+              }
+            },
             "mission_smart_contracts": {
               "anyOf": [
                 {
@@ -109,6 +118,25 @@
     }
   ],
   "definitions": {
+    "FeeConfig": {
+      "type": "object",
+      "required": [
+        "denom",
+        "fee",
+        "operation"
+      ],
+      "properties": {
+        "denom": {
+          "type": "string"
+        },
+        "fee": {
+          "$ref": "#/definitions/Uint128"
+        },
+        "operation": {
+          "type": "string"
+        }
+      }
+    },
     "InstantiateMissionSmartContracts": {
       "type": "object",
       "properties": {
