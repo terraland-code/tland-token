@@ -1,11 +1,13 @@
 use cosmwasm_std::Uint128;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use crate::state::FeeConfig;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
     pub owner: String,
     pub terraland_token: String,
+    pub fee_config: Vec<FeeConfig>,
     pub mission_smart_contracts: Option<InstantiateMissionSmartContracts>
 }
 
@@ -21,6 +23,7 @@ pub struct InstantiateMissionSmartContracts {
 pub enum ExecuteMsg {
     UpdateConfig {
         owner: Option<String>,
+        fee_config: Option<Vec<FeeConfig>>,
         mission_smart_contracts: Option<InstantiateMissionSmartContracts>,
     },
     Claim {},
@@ -36,6 +39,9 @@ pub enum ExecuteMsg {
         recipient: String,
     },
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct MigrateMsg {}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -60,6 +66,7 @@ pub struct RegisterMemberItem {
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
 pub struct MemberResponseItem {
     pub amount: Uint128,
+    pub available_to_claim: Uint128,
     pub claimed: Uint128,
     pub passed_missions: Missions,
 }

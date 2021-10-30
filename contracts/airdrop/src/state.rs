@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub struct Config {
     pub owner: Addr,
     pub terraland_token: Addr,
+    pub fee_config: Vec<FeeConfig>,
     pub mission_smart_contracts: MissionSmartContracts,
 }
 
@@ -15,6 +16,13 @@ pub struct MissionSmartContracts {
     pub lp_staking: Option<Addr>,
     pub tland_staking: Option<Addr>,
     pub platform_registry: Option<Addr>,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+pub struct FeeConfig {
+    pub fee: Uint128,
+    pub operation: String,
+    pub denom: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
