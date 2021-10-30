@@ -153,6 +153,12 @@ pub fn execute_burn_from(
     owner: String,
     amount: Uint128,
 ) -> Result<Response, ContractError> {
+    // authorized owner
+    let token_info = TOKEN_INFO.load(deps.storage)?;
+    if info.sender != token_info.owner {
+        return Err(ContractError::Unauthorized {});
+    }
+
     let owner_addr = deps.api.addr_validate(&owner)?;
 
     // deduct allowance before doing anything else have enough allowance
@@ -255,12 +261,13 @@ mod tests {
     }
 
     // this will set up the instantiation for other tests
-    fn do_instantiate<T: Into<String>>(
+    fn do_instantiate(
         mut deps: DepsMut,
-        addr: T,
+        addr: &String,
         amount: Uint128,
     ) -> TokenInfoResponse {
         let instantiate_msg = InstantiateMsg {
+            owner: addr.into(),
             name: "Auto Gen".to_string(),
             symbol: "AUTO".to_string(),
             decimals: 3,
@@ -268,7 +275,6 @@ mod tests {
                 address: addr.into(),
                 amount,
             }],
-            mint: None,
             marketing: None,
         };
         let info = mock_info("creator", &[]);
@@ -285,7 +291,7 @@ mod tests {
         let spender = String::from("addr0002");
         let info = mock_info(owner.as_ref(), &[]);
         let env = mock_env();
-        do_instantiate(deps.as_mut(), owner.clone(), Uint128::new(12340000));
+        do_instantiate(deps.as_mut(), &owner, Uint128::new(12340000));
 
         // no allowance to start
         let allowance = query_allowance(deps.as_ref(), owner.clone(), spender.clone()).unwrap();
@@ -567,41 +573,50 @@ mod tests {
     fn burn_from_respects_limits() {
         let mut deps = mock_dependencies(&[]);
         let owner = String::from("addr0001");
-        let spender = String::from("addr0002");
+        let user = String::from("addr0002");
 
         let start = Uint128::new(999999);
         do_instantiate(deps.as_mut(), &owner, start);
 
+        // transfer all to user
+        let msg = ExecuteMsg::Transfer {
+            recipient: user.clone(),
+            amount: start,
+        };
+        let info = mock_info(owner.as_ref(), &[]);
+        let env = mock_env();
+        execute(deps.as_mut(), env, info, msg).unwrap();
+
         // provide an allowance
         let allow1 = Uint128::new(77777);
         let msg = ExecuteMsg::IncreaseAllowance {
-            spender: spender.clone(),
+            spender: owner.clone(),
             amount: allow1,
             expires: None,
         };
-        let info = mock_info(owner.as_ref(), &[]);
+        let info = mock_info(user.as_ref(), &[]);
         let env = mock_env();
         execute(deps.as_mut(), env, info, msg).unwrap();
 
         // valid burn of part of the allowance
         let transfer = Uint128::new(44444);
         let msg = ExecuteMsg::BurnFrom {
-            owner: owner.clone(),
+            owner: user.clone(),
             amount: transfer,
         };
-        let info = mock_info(spender.as_ref(), &[]);
+        let info = mock_info(owner.as_ref(), &[]);
         let env = mock_env();
         let res = execute(deps.as_mut(), env, info, msg).unwrap();
         assert_eq!(res.attributes[0], attr("action", "burn_from"));
 
         // make sure money burnt
         assert_eq!(
-            get_balance(deps.as_ref(), owner.clone()),
+            get_balance(deps.as_ref(), user.clone()),
             start.checked_sub(transfer).unwrap()
         );
 
         // ensure it looks good
-        let allowance = query_allowance(deps.as_ref(), owner.clone(), spender.clone()).unwrap();
+        let allowance = query_allowance(deps.as_ref(), user.clone(), owner.clone()).unwrap();
         let expect = AllowanceResponse {
             allowance: allow1.checked_sub(transfer).unwrap(),
             expires: Expiration::Never {},
@@ -610,19 +625,19 @@ mod tests {
 
         // cannot burn more than the allowance
         let msg = ExecuteMsg::BurnFrom {
-            owner: owner.clone(),
+            owner: user.clone(),
             amount: Uint128::new(33443),
         };
-        let info = mock_info(spender.as_ref(), &[]);
+        let info = mock_info(owner.as_ref(), &[]);
         let env = mock_env();
         let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
         assert!(matches!(err, ContractError::Std(StdError::Overflow { .. })));
 
         // let us increase limit, but set the expiration (default env height is 12_345)
-        let info = mock_info(owner.as_ref(), &[]);
+        let info = mock_info(user.as_ref(), &[]);
         let env = mock_env();
         let msg = ExecuteMsg::IncreaseAllowance {
-            spender: spender.clone(),
+            spender: owner.clone(),
             amount: Uint128::new(1000),
             expires: Some(Expiration::AtHeight(env.block.height)),
         };
@@ -630,13 +645,51 @@ mod tests {
 
         // we should now get the expiration error
         let msg = ExecuteMsg::BurnFrom {
-            owner,
+            owner: user,
             amount: Uint128::new(33443),
         };
-        let info = mock_info(spender.as_ref(), &[]);
+        let info = mock_info(owner.as_ref(), &[]);
         let env = mock_env();
         let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
         assert_eq!(err, ContractError::Expired {});
+    }
+
+    #[test]
+    fn other_users_cannot_burn() {
+        let mut deps = mock_dependencies(&[]);
+        let owner = String::from("addr0001");
+        let user = String::from("addr0002");
+
+        let start = Uint128::new(100000);
+        do_instantiate(deps.as_mut(), &owner, start);
+
+        // transfer tokens to user
+        let msg = ExecuteMsg::Transfer {
+            recipient: user.clone(),
+            amount: Uint128::new(50000),
+        };
+        let info = mock_info(owner.as_ref(), &[]);
+        let env = mock_env();
+        execute(deps.as_mut(), env, info, msg).unwrap();
+
+        // not authorized to burn own tokens
+        let msg = ExecuteMsg::Burn {
+            amount: Uint128::new(1000),
+        };
+        let info = mock_info(user.as_ref(), &[]);
+        let env = mock_env();
+        let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
+        assert_eq!(err, ContractError::Unauthorized {});
+
+        // not authorized to burn others tokens
+        let msg = ExecuteMsg::BurnFrom {
+            owner: owner.clone(),
+            amount: Uint128::new(1000),
+        };
+        let info = mock_info(user.as_ref(), &[]);
+        let env = mock_env();
+        let err = execute(deps.as_mut(), env, info, msg).unwrap_err();
+        assert_eq!(err, ContractError::Unauthorized {});
     }
 
     #[test]

@@ -7,7 +7,7 @@ use cw20::{
     AllAccountsResponse, AllAllowancesResponse, AllowanceResponse, BalanceResponse,
     TokenInfoResponse,
 };
-use fcqn::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use tland_token::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
 
 fn main() {
     let mut out_dir = current_dir().unwrap();

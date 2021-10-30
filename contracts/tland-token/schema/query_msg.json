@@ -37,19 +37,6 @@
       "additionalProperties": false
     },
     {
-      "description": "Only with \"mintable\" extension. Returns who can mint and the hard cap on maximum tokens after minting. Return type: MinterResponse.",
-      "type": "object",
-      "required": [
-        "minter"
-      ],
-      "properties": {
-        "minter": {
-          "type": "object"
-        }
-      },
-      "additionalProperties": false
-    },
-    {
       "description": "Only with \"allowance\" extension. Returns how much spender can use from owner account, 0 if unset. Return type: AllowanceResponse.",
       "type": "object",
       "required": [
