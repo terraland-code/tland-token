@@ -36,6 +36,7 @@ pub fn instantiate(
         burn_address: deps.api.addr_validate(&msg.burn_address)?,
         instant_claim_percentage_loss: msg.instant_claim_percentage_loss,
         distribution_schedule: msg.distribution_schedule,
+        fee_config: msg.fee_config,
     };
 
     let state = State {
@@ -114,6 +115,9 @@ pub fn execute_update_config(
         }
         if let Some(schedule) = new_config.distribution_schedule {
             exists.distribution_schedule = schedule;
+        }
+        if let Some(fee_config) = new_config.fee_config {
+            exists.fee_config = fee_config;
         }
         Ok(exists)
     })?;
@@ -272,11 +276,12 @@ pub fn execute_unbond(
     info: MessageInfo,
     amount: Uint128,
 ) -> Result<Response, ContractError> {
+    let cfg = CONFIG.load(deps.storage)?;
+
     // sender has to pay fee to unbond
-    must_pay_fee(&info)?;
+    must_pay_fee(&info, &cfg, "unbond".to_string())?;
 
     // provide them a claim
-    let cfg = CONFIG.load(deps.storage)?;
     CLAIMS.create_claim(
         deps.storage,
         &info.sender,
@@ -314,8 +319,10 @@ pub fn execute_claim(
     env: Env,
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
+    let cfg = CONFIG.load(deps.storage)?;
+
     // sender has to pay fee to claim
-    must_pay_fee(&info)?;
+    must_pay_fee(&info, &cfg, "claim".to_string())?;
 
     // get amount of tokens to release
     let release = CLAIMS.claim_tokens(deps.storage, &info.sender, &env.block, None)?;
@@ -324,9 +331,8 @@ pub fn execute_claim(
     }
 
     // create message to transfer staking tokens
-    let config = CONFIG.load(deps.storage)?;
     let message = SubMsg::new(WasmMsg::Execute {
-        contract_addr: config.staking_token.clone().into(),
+        contract_addr: cfg.staking_token.clone().into(),
         msg: to_binary(&Cw20ExecuteMsg::Transfer {
             recipient: info.sender.clone().into(),
             amount: release,
@@ -337,7 +343,7 @@ pub fn execute_claim(
     Ok(Response::new()
         .add_submessage(message)
         .add_attribute("action", "claim")
-        .add_attribute("tokens", coin_to_string(release, config.staking_token.as_str()))
+        .add_attribute("tokens", coin_to_string(release, cfg.staking_token.as_str()))
         .add_attribute("sender", info.sender))
 }
 
@@ -346,8 +352,10 @@ pub fn execute_instant_claim(
     env: Env,
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
-    // sender has to pay fee to instant_claim
-    must_pay_fee(&info)?;
+    let cfg = CONFIG.load(deps.storage)?;
+
+    // sender has to pay fee to instant claim
+    must_pay_fee(&info, &cfg, "instant_claim".to_string())?;
 
     let config = CONFIG.load(deps.storage)?;
 
@@ -402,11 +410,12 @@ pub fn execute_withdraw(
     env: Env,
     info: MessageInfo,
 ) -> Result<Response, ContractError> {
-    // sender has to pay fee to instant_claim
-    must_pay_fee(&info)?;
+    let cfg = CONFIG.load(deps.storage)?;
+
+    // sender has to pay fee to withdraw
+    must_pay_fee(&info, &cfg, "withdraw".to_string())?;
 
     let state = STATE.load(deps.storage)?;
-    let cfg = CONFIG.load(deps.storage)?;
     let mut member_info = MEMBERS.may_load(deps.storage, &info.sender)?
         .unwrap_or(Default::default());
 
@@ -510,12 +519,27 @@ pub fn execute_token_withdraw(
         .add_attribute("sender", info.sender))
 }
 
-fn must_pay_fee(info: &MessageInfo) -> Result<(), ContractError> {
-    // check if 1 UST was send
-    let amount = must_pay(info, "uusd")?;
-    if amount != Uint128::new(1000000) {
+fn must_pay_fee(info: &MessageInfo, cfg: &Config, operation: String) -> Result<(), ContractError> {
+    let mut denom = "".to_string();
+    let mut fee_amount = Uint128::zero();
+
+    for fee_config in cfg.fee_config.iter() {
+        if fee_config.operation == operation {
+            fee_amount = fee_config.fee;
+            denom = fee_config.denom.clone();
+        }
+    }
+
+    if fee_amount == Uint128::zero() {
+        return Ok(());
+    }
+
+    // check if exact fee amount was send
+    let amount = must_pay(info, denom.as_str())?;
+    if amount != fee_amount {
         return Err(ContractError::InvalidFeeAmount {});
     }
+
     Ok(())
 }
 
@@ -611,7 +635,7 @@ fn query_member_list(
 mod tests {
     use cosmwasm_std::{Coin, from_slice};
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
-    use crate::state::Schedule;
+    use crate::state::{FeeConfig, Schedule};
 
     use super::*;
 
@@ -646,6 +670,28 @@ mod tests {
                     amount: Uint128::new(100_000_000_000),
                     start_time: env.block.time.seconds() + WEEK,
                     end_time: env.block.time.seconds() + 2 * WEEK,
+                }
+            ]),
+            fee_config: Vec::from([
+                FeeConfig{
+                    fee: Uint128::new(1000000),
+                    operation: "claim".to_string(),
+                    denom: "uusd".to_string()
+                },
+                FeeConfig{
+                    fee: Uint128::new(1000000),
+                    operation: "instant_claim".to_string(),
+                    denom: "uusd".to_string()
+                },
+                FeeConfig{
+                    fee: Uint128::new(1000000),
+                    operation: "withdraw".to_string(),
+                    denom: "uusd".to_string()
+                },
+                FeeConfig{
+                    fee: Uint128::new(1000000),
+                    operation: "unbond".to_string(),
+                    denom: "uusd".to_string()
                 }
             ]),
         };

@@ -164,6 +164,25 @@
         }
       }
     },
+    "FeeConfig": {
+      "type": "object",
+      "required": [
+        "denom",
+        "fee",
+        "operation"
+      ],
+      "properties": {
+        "denom": {
+          "type": "string"
+        },
+        "fee": {
+          "$ref": "#/definitions/Uint128"
+        },
+        "operation": {
+          "type": "string"
+        }
+      }
+    },
     "NewConfig": {
       "type": "object",
       "properties": {
@@ -182,6 +201,15 @@
             "$ref": "#/definitions/Schedule"
           }
         },
+        "fee_config": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/FeeConfig"
+          }
+        },
         "instant_claim_percentage_loss": {
           "type": [
             "integer",
@@ -191,6 +219,12 @@
           "minimum": 0.0
         },
         "owner": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "staking_token": {
           "type": [
             "string",
             "null"

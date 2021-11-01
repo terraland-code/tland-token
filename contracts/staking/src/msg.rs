@@ -5,7 +5,7 @@ pub use cw_controllers::ClaimsResponse;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::state::{Schedule};
+use crate::state::{FeeConfig, Schedule};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
@@ -16,6 +16,7 @@ pub struct InstantiateMsg {
     pub burn_address: String,
     pub instant_claim_percentage_loss: u64,
     pub distribution_schedule: Vec<Schedule>,
+    pub fee_config: Vec<FeeConfig>,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
@@ -26,6 +27,7 @@ pub struct NewConfig {
     pub burn_address: Option<String>,
     pub instant_claim_percentage_loss: Option<u64>,
     pub distribution_schedule: Option<Vec<Schedule>>,
+    pub fee_config: Option<Vec<FeeConfig>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

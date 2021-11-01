@@ -5,6 +5,7 @@
   "required": [
     "burn_address",
     "distribution_schedule",
+    "fee_config",
     "instant_claim_percentage_loss",
     "owner",
     "staking_token",
@@ -19,6 +20,12 @@
       "type": "array",
       "items": {
         "$ref": "#/definitions/Schedule"
+      }
+    },
+    "fee_config": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/FeeConfig"
       }
     },
     "instant_claim_percentage_loss": {
@@ -42,6 +49,25 @@
     }
   },
   "definitions": {
+    "FeeConfig": {
+      "type": "object",
+      "required": [
+        "denom",
+        "fee",
+        "operation"
+      ],
+      "properties": {
+        "denom": {
+          "type": "string"
+        },
+        "fee": {
+          "$ref": "#/definitions/Uint128"
+        },
+        "operation": {
+          "type": "string"
+        }
+      }
+    },
     "Schedule": {
       "type": "object",
       "required": [
