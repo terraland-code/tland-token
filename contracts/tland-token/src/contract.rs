@@ -4,7 +4,7 @@ use cosmwasm_std::{
     to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult, Uint128,
 };
 
-use cw2::set_contract_version;
+use cw2::{get_contract_version, set_contract_version};
 use cw20::{
     BalanceResponse, Cw20Coin, Cw20ReceiveMsg, DownloadLogoResponse, EmbeddedLogo, Logo, LogoInfo,
     MarketingInfoResponse, TokenInfoResponse,
@@ -16,7 +16,7 @@ use crate::allowances::{
 };
 use crate::enumerable::{query_all_accounts, query_all_allowances};
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg};
 use crate::state::{TokenInfo, BALANCES, LOGO, MARKETING_INFO, TOKEN_INFO};
 
 // version info for migration info
@@ -134,6 +134,17 @@ pub fn instantiate(
         MARKETING_INFO.save(deps.storage, &data)?;
     }
 
+    Ok(Response::default())
+}
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
+    let version = get_contract_version(deps.storage)?;
+    if version.contract != CONTRACT_NAME {
+        return Err(ContractError::CannotMigrate {
+            previous_contract: version.contract,
+        });
+    }
     Ok(Response::default())
 }
 

@@ -3,29 +3,33 @@
   "title": "ExecuteMsg",
   "oneOf": [
     {
+      "description": "Update config parameters",
       "type": "object",
       "required": [
         "update_config"
       ],
       "properties": {
         "update_config": {
+          "$ref": "#/definitions/NewConfig"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Unbond will start the unbonding process for the given number of tokens. The sender immediately loses weight from these tokens, and can claim them back to his wallet after `unbonding_period`",
+      "type": "object",
+      "required": [
+        "unbond"
+      ],
+      "properties": {
+        "unbond": {
           "type": "object",
+          "required": [
+            "tokens"
+          ],
           "properties": {
-            "mission_smart_contracts": {
-              "anyOf": [
-                {
-                  "$ref": "#/definitions/InstantiateMissionSmartContracts"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "owner": {
-              "type": [
-                "string",
-                "null"
-              ]
+            "tokens": {
+              "$ref": "#/definitions/Uint128"
             }
           }
         }
@@ -33,6 +37,7 @@
       "additionalProperties": false
     },
     {
+      "description": "Claim is used to claim your native tokens that you previously \"unbonded\" after the contract-defined waiting period (eg. 1 week)",
       "type": "object",
       "required": [
         "claim"
@@ -45,21 +50,46 @@
       "additionalProperties": false
     },
     {
+      "description": "Claim without waiting period, but with percentage fee",
       "type": "object",
       "required": [
-        "register_members"
+        "instant_claim"
       ],
       "properties": {
-        "register_members": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/RegisterMemberItem"
-          }
+        "instant_claim": {
+          "type": "object"
         }
       },
       "additionalProperties": false
     },
     {
+      "description": "Withdraw reward",
+      "type": "object",
+      "required": [
+        "withdraw"
+      ],
+      "properties": {
+        "withdraw": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "This accepts a properly-encoded ReceiveMsg from a cw20 contract",
+      "type": "object",
+      "required": [
+        "receive"
+      ],
+      "properties": {
+        "receive": {
+          "$ref": "#/definitions/Cw20ReceiveMsg"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Withdraw ust from smart contract by owner",
       "type": "object",
       "required": [
         "ust_withdraw"
@@ -84,6 +114,7 @@
       "additionalProperties": false
     },
     {
+      "description": "Withdraw tokens from smart contract by owner",
       "type": "object",
       "required": [
         "token_withdraw"
@@ -109,45 +140,92 @@
     }
   ],
   "definitions": {
-    "InstantiateMissionSmartContracts": {
-      "type": "object",
-      "properties": {
-        "lp_staking": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "platform_registry": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "tland_staking": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      }
+    "Binary": {
+      "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>",
+      "type": "string"
     },
-    "RegisterMemberItem": {
+    "Cw20ReceiveMsg": {
+      "description": "Cw20ReceiveMsg should be de/serialized under `Receive()` variant in a ExecuteMsg",
       "type": "object",
       "required": [
-        "address",
         "amount",
-        "claimed"
+        "msg",
+        "sender"
       ],
       "properties": {
-        "address": {
-          "type": "string"
-        },
         "amount": {
           "$ref": "#/definitions/Uint128"
         },
-        "claimed": {
+        "msg": {
+          "$ref": "#/definitions/Binary"
+        },
+        "sender": {
+          "type": "string"
+        }
+      }
+    },
+    "NewConfig": {
+      "type": "object",
+      "properties": {
+        "burn_address": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "distribution_schedule": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Schedule"
+          }
+        },
+        "instant_claim_percentage_loss": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "owner": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "unbonding_period": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      }
+    },
+    "Schedule": {
+      "type": "object",
+      "required": [
+        "amount",
+        "end_time",
+        "start_time"
+      ],
+      "properties": {
+        "amount": {
           "$ref": "#/definitions/Uint128"
+        },
+        "end_time": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "start_time": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
         }
       }
     },

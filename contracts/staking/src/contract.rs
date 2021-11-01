@@ -6,11 +6,11 @@ use cosmwasm_std::{Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env, fro
 use cosmwasm_std::entry_point;
 use cw0::{Duration, maybe_addr, must_pay};
 use cw20::{Balance, BalanceResponse, Cw20CoinVerified, Cw20ExecuteMsg, Cw20QueryMsg, Cw20ReceiveMsg};
-use cw2::set_contract_version;
+use cw2::{get_contract_version, set_contract_version};
 use cw_storage_plus::Bound;
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, InstantiateMsg, MemberListResponse, MemberListResponseItem, MemberResponse, MemberResponseItem, NewConfig, QueryMsg, ReceiveMsg};
+use crate::msg::{ExecuteMsg, InstantiateMsg, MemberListResponse, MemberListResponseItem, MemberResponse, MemberResponseItem, MigrateMsg, NewConfig, QueryMsg, ReceiveMsg};
 use crate::state::{CLAIMS, Config, CONFIG, MemberInfo, MEMBERS, State, STATE};
 
 // version info for migration info
@@ -47,6 +47,17 @@ pub fn instantiate(
     CONFIG.save(deps.storage, &config)?;
     STATE.save(deps.storage, &state)?;
 
+    Ok(Response::default())
+}
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
+    let version = get_contract_version(deps.storage)?;
+    if version.contract != CONTRACT_NAME {
+        return Err(ContractError::CannotMigrate {
+            previous_contract: version.contract,
+        });
+    }
     Ok(Response::default())
 }
 

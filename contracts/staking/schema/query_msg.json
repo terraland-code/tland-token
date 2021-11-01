@@ -3,6 +3,7 @@
   "title": "QueryMsg",
   "oneOf": [
     {
+      "description": "Return config",
       "type": "object",
       "required": [
         "config"
@@ -15,6 +16,20 @@
       "additionalProperties": false
     },
     {
+      "description": "Return state",
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Return staker info",
       "type": "object",
       "required": [
         "member"
@@ -35,6 +50,7 @@
       "additionalProperties": false
     },
     {
+      "description": "Return stakers",
       "type": "object",
       "required": [
         "list_members"

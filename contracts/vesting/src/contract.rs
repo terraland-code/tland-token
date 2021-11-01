@@ -3,11 +3,11 @@ use cosmwasm_std::{BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo, Order
 use cosmwasm_std::entry_point;
 use cw0::{maybe_addr, must_pay};
 use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg};
-use cw2::set_contract_version;
+use cw2::{get_contract_version, set_contract_version};
 use cw_storage_plus::Bound;
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, InstantiateMsg, MemberListResponse, MemberListResponseItem, MemberResponse, MemberResponseItem, QueryMsg, RegisterMemberItem};
+use crate::msg::{ExecuteMsg, InstantiateMsg, MemberListResponse, MemberListResponseItem, MemberResponse, MemberResponseItem, MigrateMsg, QueryMsg, RegisterMemberItem};
 use crate::state::{CONFIG, Config, FeeConfig, Member, MEMBERS, Vesting};
 
 // version info for migration info
@@ -33,6 +33,17 @@ pub fn instantiate(
 
     CONFIG.save(deps.storage, &config)?;
 
+    Ok(Response::default())
+}
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
+    let version = get_contract_version(deps.storage)?;
+    if version.contract != CONTRACT_NAME {
+        return Err(ContractError::CannotMigrate {
+            previous_contract: version.contract,
+        });
+    }
     Ok(Response::default())
 }
 
