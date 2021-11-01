@@ -100,6 +100,9 @@ pub fn execute_update_config(
         if let Some(addr) = new_config.owner {
             exists.owner = api.addr_validate(&addr)?;
         }
+        if let Some(addr) = new_config.staking_token {
+            exists.staking_token = api.addr_validate(&addr)?;
+        }
         if let Some(addr) = new_config.burn_address {
             exists.burn_address = api.addr_validate(&addr)?;
         }

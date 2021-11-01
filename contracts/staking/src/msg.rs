@@ -21,6 +21,7 @@ pub struct InstantiateMsg {
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
 pub struct NewConfig {
     pub owner: Option<String>,
+    pub staking_token: Option<String>,
     pub unbonding_period: Option<u64>,
     pub burn_address: Option<String>,
     pub instant_claim_percentage_loss: Option<u64>,
