@@ -4,17 +4,17 @@ use cosmwasm_std::{Addr, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo,
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cw0::{maybe_addr, must_pay};
-use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg};
 use cw2::{get_contract_version, set_contract_version};
+use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg};
 use cw_storage_plus::Bound;
 
-use platform_registry::{PlatformRegistryQueryMsg, AddressBaseInfoResponse};
+use platform_registry::{AddressBaseInfoResponse, PlatformRegistryQueryMsg};
 use staking::msg::MemberResponse as StakingMemberResponse;
 use staking::msg::QueryMsg as StakingQueryMsg;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMissionSmartContracts, InstantiateMsg, MemberListResponse, MemberListResponseItem, MemberResponse, MemberResponseItem, MigrateMsg, Missions, QueryMsg, RegisterMemberItem};
-use crate::state::{CONFIG, Config, FeeConfig, Member, MEMBERS, MissionSmartContracts};
+use crate::state::{CONFIG, Config, FeeConfig, Member, MEMBERS, MissionSmartContracts, STATE, State};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:airdrop";
@@ -37,6 +37,7 @@ pub fn instantiate(
     };
 
     CONFIG.save(deps.storage, &config)?;
+    STATE.save(deps.storage, &State { num_of_members: 0 })?;
 
     Ok(Response::default())
 }
@@ -85,8 +86,8 @@ pub fn execute(
 ) -> Result<Response, ContractError> {
     match msg {
         ExecuteMsg::UpdateConfig { owner, fee_config, mission_smart_contracts } =>
-            execute_update_config(deps, env, info, owner, fee_config,mission_smart_contracts),
-        ExecuteMsg::RegisterMembers ( members ) =>
+            execute_update_config(deps, env, info, owner, fee_config, mission_smart_contracts),
+        ExecuteMsg::RegisterMembers(members) =>
             execute_register_members(deps, env, info, members),
         ExecuteMsg::Claim {} => execute_claim(deps, env, info),
         ExecuteMsg::UstWithdraw { recipient, amount } =>
@@ -154,14 +155,23 @@ pub fn execute_register_members(
     }
 
     // save all members with valid address in storage
+    let mut new_members: u64 = 0;
     for m in members.iter() {
         let address = deps.api.addr_validate(&m.address)?;
         let val = Member {
             amount: m.amount,
             claimed: m.claimed,
         };
+        if !MEMBERS.has(deps.storage, &address) {
+            new_members += 1;
+        }
         MEMBERS.save(deps.storage, &address, &val)?;
     }
+
+    STATE.update(deps.storage, |mut existing_state| -> StdResult<_> {
+        existing_state.num_of_members += new_members;
+        Ok(existing_state)
+    })?;
 
     Ok(Response::new()
         .add_attribute("action", "register_member")
@@ -185,7 +195,7 @@ pub fn execute_claim(
             // check missions passed by the sender
             let missions = check_missions(&deps.querier, &cfg, &info.sender)?;
             // calculate amount to claim based on passed missions
-            let available_to_claim= calc_claim_amount( &missions, &member)?;
+            let available_to_claim = calc_claim_amount(&missions, &member)?;
             // update member claimed amount
             member.claimed += available_to_claim;
             MEMBERS.save(deps.storage, &info.sender, &member)?;
@@ -215,7 +225,7 @@ pub fn execute_claim(
         .add_attribute("sender", info.sender))
 }
 
-fn calc_claim_amount(missions : &Missions, member: &Member) -> StdResult<Uint128> {
+fn calc_claim_amount(missions: &Missions, member: &Member) -> StdResult<Uint128> {
     let passed_missions_num = calc_missions_passed(&missions);
     let max_passed_missions = Uint128::new(5);
 
@@ -247,7 +257,7 @@ pub fn execute_ust_withdraw(
     // create message to transfer ust
     let message = SubMsg::new(BankMsg::Send {
         to_address: String::from(deps.api.addr_validate(&recipient)?),
-        amount: vec![Coin{ denom: "uusd".to_string(), amount }],
+        amount: vec![Coin { denom: "uusd".to_string(), amount }],
     });
 
     Ok(Response::new()
@@ -323,14 +333,19 @@ fn must_pay_fee(info: &MessageInfo, cfg: &Config, operation: String) -> Result<(
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_binary(&query_config(deps)?),
+        QueryMsg::State {} => to_binary(&query_state(deps)?),
         QueryMsg::Member { address } => to_binary(&query_member(deps, address)?),
-        QueryMsg::ListMembers {start_after, limit} =>
+        QueryMsg::ListMembers { start_after, limit } =>
             to_binary(&query_member_list(deps, start_after, limit)?),
     }
 }
 
 pub fn query_config(deps: Deps) -> StdResult<Config> {
-    Ok( CONFIG.load(deps.storage)?)
+    Ok(CONFIG.load(deps.storage)?)
+}
+
+pub fn query_state(deps: Deps) -> StdResult<State> {
+    Ok(STATE.load(deps.storage)?)
 }
 
 pub fn query_member(deps: Deps, addr: String) -> StdResult<MemberResponse> {
@@ -341,7 +356,7 @@ pub fn query_member(deps: Deps, addr: String) -> StdResult<MemberResponse> {
     let res: Option<MemberResponseItem> = match member {
         Some(m) => {
             let passed_missions = check_missions(&deps.querier, &cfg, &addr)?;
-            let available_to_claim= calc_claim_amount(&passed_missions, &m)?;
+            let available_to_claim = calc_claim_amount(&passed_missions, &m)?;
 
             Some(MemberResponseItem {
                 amount: m.amount,
@@ -349,7 +364,7 @@ pub fn query_member(deps: Deps, addr: String) -> StdResult<MemberResponse> {
                 claimed: m.claimed,
                 passed_missions,
             })
-        },
+        }
         None => None,
     };
 
@@ -379,16 +394,16 @@ fn query_member_list(
             let cfg = CONFIG.load(deps.storage)?;
 
             let passed_missions = check_missions(&deps.querier, &cfg, &addr)?;
-            let available_to_claim= calc_claim_amount(&passed_missions, &m)?;
+            let available_to_claim = calc_claim_amount(&passed_missions, &m)?;
 
             Ok(MemberListResponseItem {
                 address: addr.to_string(),
-                info: MemberResponseItem{
+                info: MemberResponseItem {
                     amount: m.amount,
                     available_to_claim,
                     claimed: m.claimed,
                     passed_missions,
-                }
+                },
             })
         })
         .collect();
@@ -402,7 +417,7 @@ fn check_missions(querier: &QuerierWrapper, cfg: &Config, addr: &Addr) -> StdRes
         is_in_lp_staking: false,
         is_in_tland_staking: false,
         is_registered_on_platform: false,
-        is_property_shareholder: false
+        is_property_shareholder: false,
     };
 
     if let Some(contract_addr) = cfg.mission_smart_contracts.lp_staking.clone() {
@@ -434,7 +449,7 @@ fn check_missions(querier: &QuerierWrapper, cfg: &Config, addr: &Addr) -> StdRes
     if let Some(contract_addr) = cfg.mission_smart_contracts.platform_registry.clone() {
         let query = WasmQuery::Smart {
             contract_addr: contract_addr.to_string(),
-            msg: to_binary(&PlatformRegistryQueryMsg::AddressBaseInfo{
+            msg: to_binary(&PlatformRegistryQueryMsg::AddressBaseInfo {
                 address: addr.to_string(),
             })?,
         }.into();

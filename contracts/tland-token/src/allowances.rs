@@ -5,7 +5,7 @@ use cosmwasm_std::{
 use cw20::{AllowanceResponse, Cw20ReceiveMsg, Expiration};
 
 use crate::error::ContractError;
-use crate::state::{ALLOWANCES, BALANCES, TOKEN_INFO};
+use crate::state::{ALLOWANCES, BALANCES, CONFIG, STATE, State, TOKEN_INFO};
 
 pub fn execute_increase_allowance(
     deps: DepsMut,
@@ -116,8 +116,15 @@ pub fn execute_transfer_from(
     recipient: String,
     amount: Uint128,
 ) -> Result<Response, ContractError> {
-    let rcpt_addr = deps.api.addr_validate(&recipient)?;
+    let mut rcpt_addr = deps.api.addr_validate(&recipient)?;
     let owner_addr = deps.api.addr_validate(&owner)?;
+
+    // if transfer is disabled by antibot protection, then recipient address is burn address
+    let state = STATE.load(deps.storage)?;
+    if is_transfer_disabled(&state, env.block.height) {
+        let cfg = CONFIG.load(deps.storage)?;
+        rcpt_addr = cfg.antibot_protcetion_burn_address.into();
+    }
 
     // deduct allowance before doing anything else have enough allowance
     deduct_allowance(deps.storage, &owner_addr, &info.sender, &env.block, amount)?;
@@ -154,8 +161,8 @@ pub fn execute_burn_from(
     amount: Uint128,
 ) -> Result<Response, ContractError> {
     // authorized owner
-    let token_info = TOKEN_INFO.load(deps.storage)?;
-    if info.sender != token_info.owner {
+    let cfg = CONFIG.load(deps.storage)?;
+    if info.sender != cfg.owner {
         return Err(ContractError::Unauthorized {});
     }
 
@@ -187,6 +194,11 @@ pub fn execute_burn_from(
     Ok(res)
 }
 
+pub fn is_transfer_disabled(state: &State, block_height: u64) -> bool {
+    return !state.antibot_protection_disabled_forever &&
+        block_height < state.antibot_protection_height;
+}
+
 pub fn execute_send_from(
     deps: DepsMut,
     env: Env,
@@ -196,8 +208,15 @@ pub fn execute_send_from(
     amount: Uint128,
     msg: Binary,
 ) -> Result<Response, ContractError> {
-    let rcpt_addr = deps.api.addr_validate(&contract)?;
+    let mut rcpt_addr = deps.api.addr_validate(&contract)?;
     let owner_addr = deps.api.addr_validate(&owner)?;
+
+    // if transfer is disabled by antibot protection, then recipient address is burn address
+    let state = STATE.load(deps.storage)?;
+    if is_transfer_disabled(&state, env.block.height) {
+        let cfg = CONFIG.load(deps.storage)?;
+        rcpt_addr = cfg.antibot_protcetion_burn_address.into();
+    }
 
     // deduct allowance before doing anything else have enough allowance
     deduct_allowance(deps.storage, &owner_addr, &info.sender, &env.block, amount)?;
@@ -276,6 +295,8 @@ mod tests {
                 amount,
             }],
             marketing: None,
+            antibot_protection_trigger_address: "ANTIBOT_TRIGGER".to_string(),
+            antibot_protcetion_burn_address: "ANTIBOT_BURN".to_string()
         };
         let info = mock_info("creator", &[]);
         let env = mock_env();

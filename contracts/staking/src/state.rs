@@ -13,6 +13,7 @@ pub struct Config {
     pub burn_address: Addr,
     pub instant_claim_percentage_loss: u64,
     pub distribution_schedule: Vec<Schedule>,
+    pub fee_config: Vec<FeeConfig>,
 }
 
 #[derive(Default, Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
@@ -20,6 +21,13 @@ pub struct Schedule {
     pub amount: Uint128,
     pub start_time: u64,
     pub end_time: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+pub struct FeeConfig {
+    pub fee: Uint128,
+    pub operation: String,
+    pub denom: String,
 }
 
 #[derive(Default, Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
@@ -35,6 +43,7 @@ pub struct State {
     pub total_stake: Uint128,
     pub last_updated: u64,
     pub global_reward_index: Decimal,
+    pub num_of_members: u64,
 }
 
 pub const CONFIG: Item<Config> = Item::new("config");

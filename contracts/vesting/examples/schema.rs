@@ -3,8 +3,9 @@ use std::fs::create_dir_all;
 
 use cosmwasm_schema::{export_schema, remove_schemas, schema_for};
 
-use vesting::msg::{MemberResponse, ExecuteMsg, InstantiateMsg, QueryMsg, MemberListResponse};
+use vesting::msg::{MemberResponse, ExecuteMsg, InstantiateMsg, QueryMsg, MigrateMsg, MemberListResponse};
 use vesting::state::Config as ConfigResponse;
+use vesting::state::State as StateResponse;
 
 fn main() {
     let mut out_dir = current_dir().unwrap();
@@ -15,8 +16,10 @@ fn main() {
     export_schema(&schema_for!(InstantiateMsg), &out_dir);
     export_schema(&schema_for!(ExecuteMsg), &out_dir);
     export_schema(&schema_for!(QueryMsg), &out_dir);
+    export_schema(&schema_for!(MigrateMsg), &out_dir);
 
     export_schema(&schema_for!(ConfigResponse), &out_dir);
+    export_schema(&schema_for!(StateResponse), &out_dir);
     export_schema(&schema_for!(MemberResponse), &out_dir);
     export_schema(&schema_for!(MemberListResponse), &out_dir);
 }

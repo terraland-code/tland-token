@@ -6,7 +6,7 @@ use staking::state::Config as ConfigResponse;
 use staking::state::State as StateResponse;
 
 pub use staking::msg::{
-    ExecuteMsg, InstantiateMsg, QueryMsg, ReceiveMsg, MemberResponse,
+    ExecuteMsg, InstantiateMsg, QueryMsg, MigrateMsg, ReceiveMsg, MemberResponse,
     MemberListResponse,
 };
 
@@ -20,6 +20,7 @@ fn main() {
     export_schema(&schema_for!(ExecuteMsg), &out_dir);
     export_schema(&schema_for!(QueryMsg), &out_dir);
     export_schema(&schema_for!(ReceiveMsg), &out_dir);
+    export_schema(&schema_for!(MigrateMsg), &out_dir);
 
     export_schema(&schema_for!(ConfigResponse), &out_dir);
     export_schema(&schema_for!(StateResponse), &out_dir);

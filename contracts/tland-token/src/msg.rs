@@ -20,6 +20,8 @@ pub struct InstantiateMsg {
     pub decimals: u8,
     pub initial_balances: Vec<Cw20Coin>,
     pub marketing: Option<InstantiateMarketingInfo>,
+    pub antibot_protection_trigger_address: String,
+    pub antibot_protcetion_burn_address: String,
 }
 
 impl InstantiateMsg {
@@ -66,6 +68,8 @@ fn is_valid_symbol(symbol: &str) -> bool {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
+    Config {},
+    State {},
     /// Returns the current balance of the given address, 0 if unset.
     /// Return type: BalanceResponse.
     Balance { address: String },
@@ -103,9 +107,17 @@ pub enum QueryMsg {
     DownloadLogo {},
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct MigrateMsg {}
+
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
+    UpdateConfig {
+        owner: Option<String>,
+        antibot_protection_trigger_address: Option<String>,
+        antibot_protection_burn_address: Option<String>,
+    },
     /// Transfer is a base message to move tokens to another account without triggering actions
     Transfer { recipient: String, amount: Uint128 },
     /// Burn is a base message to destroy tokens forever
@@ -163,6 +175,12 @@ pub enum ExecuteMsg {
     },
     /// If set as the "marketing" role on the contract, upload a new URL, SVG, or PNG for the token
     UploadLogo(Logo),
+
+    /// Antibot Defense - Block any transfer and send all tokens to burn address
+    DisableTransfers{ num_of_blocks: u64 },
+    /// Disable antibot defense forever
+    /// Cannot trigger DisableTransfers anymore
+    DisableAntibotDefenseForever{},
 }
 
 
