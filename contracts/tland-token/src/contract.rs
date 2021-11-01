@@ -11,12 +11,12 @@ use cw20::{
 
 use crate::allowances::{
     execute_burn_from, execute_decrease_allowance, execute_increase_allowance, execute_send_from,
-    execute_transfer_from, query_allowance,
+    execute_transfer_from, is_transfer_disabled, query_allowance,
 };
 use crate::enumerable::{query_all_accounts, query_all_allowances};
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg};
-use crate::state::{BALANCES, CONFIG, Config, LOGO, MARKETING_INFO, TOKEN_INFO, TokenInfo};
+use crate::state::{BALANCES, CONFIG, Config, LOGO, MARKETING_INFO, STATE, State, TOKEN_INFO, TokenInfo};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:tland-token";
@@ -107,9 +107,21 @@ pub fn instantiate(
     };
     TOKEN_INFO.save(deps.storage, &data)?;
 
-    let cfg = Config { owner: deps.api.addr_validate(&msg.owner)? };
+    // store config
+    let cfg = Config {
+        owner: deps.api.addr_validate(&msg.owner)?,
+        antibot_protection_trigger_address: deps.api.addr_validate(&msg.antibot_protection_trigger_address)?,
+        antibot_protcetion_burn_address: deps.api.addr_validate(&msg.antibot_protcetion_burn_address)?,
+    };
     CONFIG.save(deps.storage, &cfg)?;
 
+    // store state
+    STATE.save(deps.storage, &State {
+        antibot_protection_disabled_forever: false,
+        antibot_protection_height: Default::default(),
+    })?;
+
+    // store marketing info
     if let Some(marketing) = msg.marketing {
         let logo = if let Some(logo) = marketing.logo {
             verify_logo(&logo)?;
@@ -167,8 +179,12 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::UpdateConfig { owner } =>
-            execute_update_config(deps, env, info, owner),
+        ExecuteMsg::UpdateConfig {
+            owner,
+            antibot_protection_trigger_address,
+            antibot_protection_burn_address,
+        } =>
+            execute_update_config(deps, env, info, owner, antibot_protection_trigger_address, antibot_protection_burn_address),
         ExecuteMsg::Transfer { recipient, amount } => {
             execute_transfer(deps, env, info, recipient, amount)
         }
@@ -206,6 +222,10 @@ pub fn execute(
             marketing,
         } => execute_update_marketing(deps, env, info, project, description, marketing),
         ExecuteMsg::UploadLogo(logo) => execute_upload_logo(deps, env, info, logo),
+        ExecuteMsg::DisableTransfers { num_of_blocks } =>
+            execute_disable_transfers(deps, env, info, num_of_blocks),
+        ExecuteMsg::DisableAntibotDefenseForever {} =>
+            execute_disable_antibot_defense_forever(deps, env, info)
     }
 }
 
@@ -214,6 +234,8 @@ pub fn execute_update_config(
     _env: Env,
     info: MessageInfo,
     new_owner: Option<String>,
+    new_antibot_protection_trigger_address: Option<String>,
+    new_antibot_protection_burn_address: Option<String>,
 ) -> Result<Response, ContractError> {
     // authorized owner
     let cfg = CONFIG.load(deps.storage)?;
@@ -228,6 +250,12 @@ pub fn execute_update_config(
         if let Some(addr) = new_owner {
             existing_config.owner = api.addr_validate(&addr)?;
         }
+        if let Some(addr) = new_antibot_protection_trigger_address {
+            existing_config.antibot_protection_trigger_address = api.addr_validate(&addr)?;
+        }
+        if let Some(addr) = new_antibot_protection_burn_address {
+            existing_config.antibot_protcetion_burn_address = api.addr_validate(&addr)?;
+        }
         Ok(existing_config)
     })?;
 
@@ -238,7 +266,7 @@ pub fn execute_update_config(
 
 pub fn execute_transfer(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     recipient: String,
     amount: Uint128,
@@ -247,7 +275,14 @@ pub fn execute_transfer(
         return Err(ContractError::InvalidZeroAmount {});
     }
 
-    let rcpt_addr = deps.api.addr_validate(&recipient)?;
+    let mut rcpt_addr = deps.api.addr_validate(&recipient)?;
+
+    // if transfer is disabled by antibot protection, then recipient address is burn address
+    let state = STATE.load(deps.storage)?;
+    if is_transfer_disabled(&state, env.block.height) {
+        let cfg = CONFIG.load(deps.storage)?;
+        rcpt_addr = cfg.antibot_protcetion_burn_address.into();
+    }
 
     BALANCES.update(
         deps.storage,
@@ -309,7 +344,7 @@ pub fn execute_burn(
 
 pub fn execute_send(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     contract: String,
     amount: Uint128,
@@ -319,7 +354,14 @@ pub fn execute_send(
         return Err(ContractError::InvalidZeroAmount {});
     }
 
-    let rcpt_addr = deps.api.addr_validate(&contract)?;
+    let mut rcpt_addr = deps.api.addr_validate(&contract)?;
+
+    // if transfer is disabled by antibot protection, then recipient address is burn address
+    let state = STATE.load(deps.storage)?;
+    if is_transfer_disabled(&state, env.block.height) {
+        let cfg = CONFIG.load(deps.storage)?;
+        rcpt_addr = cfg.antibot_protcetion_burn_address.into();
+    }
 
     // move the tokens to the contract
     BALANCES.update(
@@ -439,10 +481,62 @@ pub fn execute_upload_logo(
     Ok(res)
 }
 
+pub fn execute_disable_transfers(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    num_of_blocks: u64,
+) -> Result<Response, ContractError> {
+    // authorized address
+    let cfg = CONFIG.load(deps.storage)?;
+    if cfg.antibot_protection_trigger_address != info.sender {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    // check if this functionality is not disabled
+    let state = STATE.load(deps.storage)?;
+    if state.antibot_protection_disabled_forever {
+        return Err(ContractError::DisabledAction {});
+    }
+
+    // calculate antibot protection block height
+    STATE.update(deps.storage, |mut existing_state| -> StdResult<_> {
+        existing_state.antibot_protection_height = env.block.height + num_of_blocks;
+        Ok(existing_state)
+    })?;
+
+    Ok(Response::new()
+        .add_attribute("action", "disable_transfers")
+        .add_attribute("sender", info.sender))
+}
+
+pub fn execute_disable_antibot_defense_forever(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+) -> Result<Response, ContractError> {
+    // authorized owner
+    let cfg = CONFIG.load(deps.storage)?;
+    if cfg.owner != info.sender {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    STATE.update(deps.storage, |mut existing_state| -> StdResult<_> {
+        existing_state.antibot_protection_disabled_forever = true;
+        existing_state.antibot_protection_height = 0;
+        Ok(existing_state)
+    })?;
+
+    Ok(Response::new()
+        .add_attribute("action", "disable_antibot_defense_forever")
+        .add_attribute("sender", info.sender))
+}
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_binary(&query_config(deps)?),
+        QueryMsg::State {} => to_binary(&query_state(deps)?),
         QueryMsg::Balance { address } => to_binary(&query_balance(deps, address)?),
         QueryMsg::TokenInfo {} => to_binary(&query_token_info(deps)?),
         QueryMsg::Allowance { owner, spender } => {
@@ -462,7 +556,11 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
 }
 
 pub fn query_config(deps: Deps) -> StdResult<Config> {
-    Ok( CONFIG.load(deps.storage)?)
+    Ok(CONFIG.load(deps.storage)?)
+}
+
+pub fn query_state(deps: Deps) -> StdResult<State> {
+    Ok(STATE.load(deps.storage)?)
 }
 
 pub fn query_balance(deps: Deps, address: String) -> StdResult<BalanceResponse> {
@@ -537,6 +635,8 @@ mod tests {
                 amount,
             }],
             marketing: None,
+            antibot_protection_trigger_address: "ANTIBOT_TRIGGER".to_string(),
+            antibot_protcetion_burn_address: "ANTIBOT_BURN".to_string(),
         };
         let info = mock_info("creator", &[]);
         let env = mock_env();
@@ -576,6 +676,8 @@ mod tests {
                     amount,
                 }],
                 marketing: None,
+                antibot_protection_trigger_address: "ANTIBOT_TRIGGER".to_string(),
+                antibot_protcetion_burn_address: "ANTIBOT_BURN".to_string(),
             };
             let info = mock_info("creator", &[]);
             let env = mock_env();
@@ -615,6 +717,8 @@ mod tests {
                         marketing: Some("marketing".to_owned()),
                         logo: Some(Logo::Url("url".to_owned())),
                     }),
+                    antibot_protection_trigger_address: "ANTIBOT_TRIGGER".to_string(),
+                    antibot_protcetion_burn_address: "ANTIBOT_BURN".to_string(),
                 };
 
                 let info = mock_info("creator", &[]);
@@ -655,6 +759,8 @@ mod tests {
                         marketing: Some("m".to_owned()),
                         logo: Some(Logo::Url("url".to_owned())),
                     }),
+                    antibot_protection_trigger_address: "ANTIBOT_TRIGGER".to_string(),
+                    antibot_protcetion_burn_address: "ANTIBOT_BURN".to_string(),
                 };
 
                 let info = mock_info("creator", &[]);
@@ -694,6 +800,8 @@ mod tests {
                 },
             ],
             marketing: None,
+            antibot_protection_trigger_address: "ANTIBOT_TRIGGER".to_string(),
+            antibot_protcetion_burn_address: "ANTIBOT_BURN".to_string(),
         };
         let info = mock_info("creator", &[]);
         let env = mock_env();
@@ -934,6 +1042,94 @@ mod tests {
         );
     }
 
+    #[test]
+    fn antibot_protection() {
+        let mut deps = mock_dependencies(&coins(2, "token"));
+        let owner = String::from("OWNER");
+        let addr = String::from("addr");
+        let antibot_trigger = String::from("ANTIBOT_TRIGGER");
+        let antibot_burn = String::from("ANTIBOT_BURN");
+        let amount = Uint128::from(1_000_000u128);
+
+        do_instantiate(deps.as_mut(), &owner, amount);
+
+        // cannot disable transfer by the owner or other address
+        let env = mock_env();
+        let info = mock_info(owner.as_ref(), &[]);
+        let msg = ExecuteMsg::DisableTransfers {
+            num_of_blocks: 2,
+        };
+        let err = execute(deps.as_mut(), env.clone(), info, msg.clone()).unwrap_err();
+        assert!(matches!(err, ContractError::Unauthorized {}));
+        let info = mock_info(addr.as_ref(), &[]);
+        let err = execute(deps.as_mut(), env.clone(), info, msg.clone()).unwrap_err();
+        assert!(matches!(err, ContractError::Unauthorized {}));
+
+        // disable transfer by the antibot trigger address only
+        let info = mock_info(antibot_trigger.as_ref(), &[]);
+        execute(deps.as_mut(), env, info, msg.clone()).unwrap();
+
+        // all transfers are disabled for current and next block height,
+        // ternsfered tokens will be sent to antibot burn address
+        let env = mock_env();
+        let info = mock_info(owner.as_ref(), &[]);
+        let msg = ExecuteMsg::Transfer {
+            recipient: addr.clone(),
+            amount: Uint128::from(100_000u128),
+        };
+        execute(deps.as_mut(), env, info, msg.clone()).unwrap();
+        assert_eq!(get_balance(deps.as_ref(), owner.clone()), Uint128::from(900_000u128));
+        assert_eq!(get_balance(deps.as_ref(), antibot_burn.clone()), Uint128::from(100_000u128));
+
+        // ... next block
+        let mut env = mock_env();
+        env.block.height += 1;
+        let info = mock_info(owner.as_ref(), &[]);
+        let msg = ExecuteMsg::Transfer {
+            recipient: addr.clone(),
+            amount: Uint128::from(100_000u128),
+        };
+        execute(deps.as_mut(), env.clone(), info, msg.clone()).unwrap();
+        assert_eq!(get_balance(deps.as_ref(), owner.clone()), Uint128::from(800_000u128));
+        assert_eq!(get_balance(deps.as_ref(), antibot_burn.clone()), Uint128::from(200_000u128));
+
+        // after 2 blocks transfer is enabled again
+        let mut env = mock_env();
+        env.block.height += 2;
+        let info = mock_info(owner.as_ref(), &[]);
+        let msg = ExecuteMsg::Transfer {
+            recipient: addr.clone(),
+            amount: Uint128::from(100_000u128),
+        };
+        execute(deps.as_mut(), env.clone(), info, msg.clone()).unwrap();
+        assert_eq!(get_balance(deps.as_ref(), owner.clone()), Uint128::from(700_000u128));
+        assert_eq!(get_balance(deps.as_ref(), antibot_burn.clone()), Uint128::from(200_000u128));
+        assert_eq!(get_balance(deps.as_ref(), addr.clone()), Uint128::from(100_000u128));
+
+        // disable antibot protection forever
+        let env = mock_env();
+        let info = mock_info(owner.as_ref(), &[]);
+        let msg = ExecuteMsg::DisableAntibotDefenseForever {};
+        execute(deps.as_mut(), env.clone(), info, msg.clone()).unwrap();
+
+        // transfer enabled, funds are not send to antibot burn address anymore
+        let env = mock_env();
+        let info = mock_info(owner.as_ref(), &[]);
+        let msg = ExecuteMsg::Transfer {
+            recipient: addr.clone(),
+            amount: Uint128::from(100_000u128),
+        };
+        execute(deps.as_mut(), env.clone(), info, msg.clone()).unwrap();
+        assert_eq!(get_balance(deps.as_ref(), owner.clone()), Uint128::from(600_000u128));
+        assert_eq!(get_balance(deps.as_ref(), antibot_burn.clone()), Uint128::from(200_000u128));
+        assert_eq!(get_balance(deps.as_ref(), addr.clone()), Uint128::from(200_000u128));
+
+        // check state
+        let state = query_state(deps.as_ref()).unwrap();
+        assert_eq!(state.antibot_protection_height, 0);
+        assert_eq!(state.antibot_protection_disabled_forever, true);
+    }
+
     mod marketing {
         use super::*;
 
@@ -952,6 +1148,8 @@ mod tests {
                     marketing: Some("marketing".to_owned()),
                     logo: Some(Logo::Url("url".to_owned())),
                 }),
+                antibot_protection_trigger_address: "ANTIBOT_TRIGGER".to_string(),
+                antibot_protcetion_burn_address: "ANTIBOT_BURN".to_string(),
             };
 
             let info = mock_info("creator", &[]);
@@ -1006,6 +1204,8 @@ mod tests {
                     marketing: Some("creator".to_owned()),
                     logo: Some(Logo::Url("url".to_owned())),
                 }),
+                antibot_protection_trigger_address: "ANTIBOT_TRIGGER".to_string(),
+                antibot_protcetion_burn_address: "ANTIBOT_BURN".to_string(),
             };
 
             let info = mock_info("creator", &[]);
@@ -1059,6 +1259,8 @@ mod tests {
                     marketing: Some("creator".to_owned()),
                     logo: Some(Logo::Url("url".to_owned())),
                 }),
+                antibot_protection_trigger_address: "ANTIBOT_TRIGGER".to_string(),
+                antibot_protcetion_burn_address: "ANTIBOT_BURN".to_string(),
             };
 
             let info = mock_info("creator", &[]);
@@ -1112,6 +1314,8 @@ mod tests {
                     marketing: Some("creator".to_owned()),
                     logo: Some(Logo::Url("url".to_owned())),
                 }),
+                antibot_protection_trigger_address: "ANTIBOT_TRIGGER".to_string(),
+                antibot_protcetion_burn_address: "ANTIBOT_BURN".to_string(),
             };
 
             let info = mock_info("creator", &[]);
@@ -1165,6 +1369,8 @@ mod tests {
                     marketing: Some("creator".to_owned()),
                     logo: Some(Logo::Url("url".to_owned())),
                 }),
+                antibot_protection_trigger_address: "ANTIBOT_TRIGGER".to_string(),
+                antibot_protcetion_burn_address: "ANTIBOT_BURN".to_string(),
             };
 
             let info = mock_info("creator", &[]);
@@ -1218,6 +1424,8 @@ mod tests {
                     marketing: Some("creator".to_owned()),
                     logo: Some(Logo::Url("url".to_owned())),
                 }),
+                antibot_protection_trigger_address: "ANTIBOT_TRIGGER".to_string(),
+                antibot_protcetion_burn_address: "ANTIBOT_BURN".to_string(),
             };
 
             let info = mock_info("creator", &[]);
@@ -1271,6 +1479,8 @@ mod tests {
                     marketing: Some("creator".to_owned()),
                     logo: Some(Logo::Url("url".to_owned())),
                 }),
+                antibot_protection_trigger_address: "ANTIBOT_TRIGGER".to_string(),
+                antibot_protcetion_burn_address: "ANTIBOT_BURN".to_string(),
             };
 
             let info = mock_info("creator", &[]);
@@ -1328,6 +1538,8 @@ mod tests {
                     marketing: Some("creator".to_owned()),
                     logo: Some(Logo::Url("url".to_owned())),
                 }),
+                antibot_protection_trigger_address: "ANTIBOT_TRIGGER".to_string(),
+                antibot_protcetion_burn_address: "ANTIBOT_BURN".to_string(),
             };
 
             let info = mock_info("creator", &[]);
@@ -1381,6 +1593,8 @@ mod tests {
                     marketing: Some("creator".to_owned()),
                     logo: Some(Logo::Url("url".to_owned())),
                 }),
+                antibot_protection_trigger_address: "ANTIBOT_TRIGGER".to_string(),
+                antibot_protcetion_burn_address: "ANTIBOT_BURN".to_string(),
             };
 
             let info = mock_info("creator", &[]);
@@ -1430,6 +1644,8 @@ mod tests {
                     marketing: Some("creator".to_owned()),
                     logo: Some(Logo::Url("url".to_owned())),
                 }),
+                antibot_protection_trigger_address: "ANTIBOT_TRIGGER".to_string(),
+                antibot_protcetion_burn_address: "ANTIBOT_BURN".to_string(),
             };
 
             let info = mock_info("creator", &[]);
@@ -1480,6 +1696,8 @@ mod tests {
                     marketing: Some("creator".to_owned()),
                     logo: Some(Logo::Url("url".to_owned())),
                 }),
+                antibot_protection_trigger_address: "ANTIBOT_TRIGGER".to_string(),
+                antibot_protcetion_burn_address: "ANTIBOT_BURN".to_string(),
             };
 
             let info = mock_info("creator", &[]);
@@ -1531,6 +1749,8 @@ mod tests {
                     marketing: Some("creator".to_owned()),
                     logo: Some(Logo::Url("url".to_owned())),
                 }),
+                antibot_protection_trigger_address: "ANTIBOT_TRIGGER".to_string(),
+                antibot_protcetion_burn_address: "ANTIBOT_BURN".to_string(),
             };
 
             let info = mock_info("creator", &[]);
@@ -1581,6 +1801,8 @@ mod tests {
                     marketing: Some("creator".to_owned()),
                     logo: Some(Logo::Url("url".to_owned())),
                 }),
+                antibot_protection_trigger_address: "ANTIBOT_TRIGGER".to_string(),
+                antibot_protcetion_burn_address: "ANTIBOT_BURN".to_string(),
             };
 
             let info = mock_info("creator", &[]);
@@ -1638,6 +1860,8 @@ mod tests {
                     marketing: Some("creator".to_owned()),
                     logo: Some(Logo::Url("url".to_owned())),
                 }),
+                antibot_protection_trigger_address: "ANTIBOT_TRIGGER".to_string(),
+                antibot_protcetion_burn_address: "ANTIBOT_BURN".to_string(),
             };
 
             let info = mock_info("creator", &[]);
@@ -1688,6 +1912,8 @@ mod tests {
                     marketing: Some("creator".to_owned()),
                     logo: Some(Logo::Url("url".to_owned())),
                 }),
+                antibot_protection_trigger_address: "ANTIBOT_TRIGGER".to_string(),
+                antibot_protcetion_burn_address: "ANTIBOT_BURN".to_string(),
             };
 
             let info = mock_info("creator", &[]);

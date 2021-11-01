@@ -3,6 +3,8 @@
   "title": "InstantiateMsg",
   "type": "object",
   "required": [
+    "antibot_protcetion_burn_address",
+    "antibot_protection_trigger_address",
     "decimals",
     "initial_balances",
     "name",
@@ -10,6 +12,12 @@
     "symbol"
   ],
   "properties": {
+    "antibot_protcetion_burn_address": {
+      "type": "string"
+    },
+    "antibot_protection_trigger_address": {
+      "type": "string"
+    },
     "decimals": {
       "type": "integer",
       "format": "uint8",

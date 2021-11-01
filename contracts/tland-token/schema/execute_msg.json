@@ -11,6 +11,18 @@
         "update_config": {
           "type": "object",
           "properties": {
+            "antibot_protection_burn_address": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "antibot_protection_trigger_address": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "owner": {
               "type": [
                 "string",
@@ -299,6 +311,42 @@
       "properties": {
         "upload_logo": {
           "$ref": "#/definitions/Logo"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Antibot Defense - Block any transfer and send all tokens to burn address",
+      "type": "object",
+      "required": [
+        "disable_transfers"
+      ],
+      "properties": {
+        "disable_transfers": {
+          "type": "object",
+          "required": [
+            "num_of_blocks"
+          ],
+          "properties": {
+            "num_of_blocks": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Disable antibot defense forever Cannot trigger DisableTransfers anymore",
+      "type": "object",
+      "required": [
+        "disable_antibot_defense_forever"
+      ],
+      "properties": {
+        "disable_antibot_defense_forever": {
+          "type": "object"
         }
       },
       "additionalProperties": false

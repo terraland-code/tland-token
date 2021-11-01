@@ -32,4 +32,7 @@ pub enum ContractError {
 
     #[error("Cannot migrate from different contract type: {previous_contract}")]
     CannotMigrate { previous_contract: String },
+
+    #[error("Disabled functionality")]
+    DisabledAction {}
 }
