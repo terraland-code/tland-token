@@ -5,6 +5,7 @@
   "required": [
     "global_reward_index",
     "last_updated",
+    "num_of_members",
     "total_stake"
   ],
   "properties": {
@@ -12,6 +13,11 @@
       "$ref": "#/definitions/Decimal"
     },
     "last_updated": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "num_of_members": {
       "type": "integer",
       "format": "uint64",
       "minimum": 0.0

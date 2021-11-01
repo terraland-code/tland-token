@@ -41,8 +41,9 @@ pub fn instantiate(
 
     let state = State {
         total_stake: Default::default(),
-        last_updated: 0,
+        last_updated: Default::default(),
         global_reward_index: Default::default(),
+        num_of_members: Default::default(),
     };
 
     CONFIG.save(deps.storage, &config)?;
@@ -184,6 +185,9 @@ pub fn execute_bond(
     state.total_stake += amount;
     state.last_updated = env.block.time.seconds();
     state.global_reward_index = member_info.reward_index;
+    if !MEMBERS.has(deps.storage, &sender) {
+        state.num_of_members += 1;
+    }
 
     // save new member info and state in storage
     MEMBERS.save(deps.storage, &sender, &member_info)?;
@@ -291,7 +295,7 @@ pub fn execute_unbond(
 
     let mut state = STATE.load(deps.storage)?;
     let mut member_info = MEMBERS.may_load(deps.storage, &info.sender)?
-        .unwrap_or(Default::default());
+        .ok_or(ContractError::MemberNotFound {})?;
 
     // compute reward and updates member info with new rewards
     update_member_reward(&state, &cfg, env.block.time.seconds(), &mut member_info)?;

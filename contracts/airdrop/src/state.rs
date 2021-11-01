@@ -31,5 +31,11 @@ pub struct Member {
     pub claimed: Uint128,
 }
 
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+pub struct State {
+    pub num_of_members: u64,
+}
+
 pub const CONFIG: Item<Config> = Item::new("config");
 pub const MEMBERS: Map<&Addr, Member> = Map::new("members");
+pub const STATE: Item<State> = Item::new("state");

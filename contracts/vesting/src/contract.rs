@@ -8,7 +8,7 @@ use cw_storage_plus::Bound;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MemberListResponse, MemberListResponseItem, MemberResponse, MemberResponseItem, MigrateMsg, QueryMsg, RegisterMemberItem};
-use crate::state::{CONFIG, Config, FeeConfig, Member, MEMBERS, Vesting};
+use crate::state::{CONFIG, Config, FeeConfig, Member, MEMBERS, State, STATE, Vesting};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:airdrop";
@@ -32,6 +32,7 @@ pub fn instantiate(
     };
 
     CONFIG.save(deps.storage, &config)?;
+    STATE.save(deps.storage, &State { num_of_members: 0 })?;
 
     Ok(Response::default())
 }
@@ -119,14 +120,23 @@ pub fn execute_register_members(
     }
 
     // save all members with valid address in storage
+    let mut new_members: u64 = 0;
     for m in members.iter() {
         let address = deps.api.addr_validate(&m.address)?;
         let val = Member {
             amount: m.amount,
             claimed: m.claimed.unwrap_or_default(),
         };
+        if !MEMBERS.has(deps.storage, &address) {
+            new_members += 1;
+        }
         MEMBERS.save(deps.storage, &address, &val)?;
     }
+
+    STATE.update(deps.storage, |mut existing_state| -> StdResult<_> {
+        existing_state.num_of_members += new_members;
+        Ok(existing_state)
+    })?;
 
     Ok(Response::new()
         .add_attribute("action", "register_member")
@@ -304,6 +314,7 @@ fn must_pay_fee(info: &MessageInfo, cfg: &Config, operation: String) -> Result<(
 pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_binary(&query_config(deps)?),
+        QueryMsg::State {} => to_binary(&query_state(deps)?),
         QueryMsg::Member { address } =>
             to_binary(&query_member(deps, address, env.block.time.seconds())?),
         QueryMsg::ListMembers { start_after, limit } =>
@@ -313,6 +324,10 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
 
 pub fn query_config(deps: Deps) -> StdResult<Config> {
     Ok(CONFIG.load(deps.storage)?)
+}
+
+pub fn query_state(deps: Deps) -> StdResult<State> {
+    Ok(STATE.load(deps.storage)?)
 }
 
 pub fn query_member(deps: Deps, addr: String, time: u64) -> StdResult<MemberResponse> {

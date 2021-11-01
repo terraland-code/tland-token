@@ -43,6 +43,7 @@ pub struct State {
     pub total_stake: Uint128,
     pub last_updated: u64,
     pub global_reward_index: Decimal,
+    pub num_of_members: u64,
 }
 
 pub const CONFIG: Item<Config> = Item::new("config");
