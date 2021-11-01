@@ -5,7 +5,7 @@ use cosmwasm_std::{
 use cw20::{AllowanceResponse, Cw20ReceiveMsg, Expiration};
 
 use crate::error::ContractError;
-use crate::state::{ALLOWANCES, BALANCES, TOKEN_INFO};
+use crate::state::{ALLOWANCES, BALANCES, CONFIG, TOKEN_INFO};
 
 pub fn execute_increase_allowance(
     deps: DepsMut,
@@ -154,8 +154,8 @@ pub fn execute_burn_from(
     amount: Uint128,
 ) -> Result<Response, ContractError> {
     // authorized owner
-    let token_info = TOKEN_INFO.load(deps.storage)?;
-    if info.sender != token_info.owner {
+    let cfg = CONFIG.load(deps.storage)?;
+    if info.sender != cfg.owner {
         return Err(ContractError::Unauthorized {});
     }
 

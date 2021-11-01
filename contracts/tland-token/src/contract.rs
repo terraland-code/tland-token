@@ -1,9 +1,8 @@
+use cosmwasm_std::{
+    Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult, to_binary, Uint128,
+};
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{
-    to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult, Uint128,
-};
-
 use cw2::{get_contract_version, set_contract_version};
 use cw20::{
     BalanceResponse, Cw20Coin, Cw20ReceiveMsg, DownloadLogoResponse, EmbeddedLogo, Logo, LogoInfo,
@@ -17,7 +16,7 @@ use crate::allowances::{
 use crate::enumerable::{query_all_accounts, query_all_allowances};
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg};
-use crate::state::{TokenInfo, BALANCES, LOGO, MARKETING_INFO, TOKEN_INFO};
+use crate::state::{BALANCES, CONFIG, Config, LOGO, MARKETING_INFO, TOKEN_INFO, TokenInfo};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:tland-token";
@@ -101,13 +100,15 @@ pub fn instantiate(
 
     // store token info
     let data = TokenInfo {
-        owner: deps.api.addr_validate(&msg.owner)?,
         name: msg.name,
         symbol: msg.symbol,
         decimals: msg.decimals,
         total_supply,
     };
     TOKEN_INFO.save(deps.storage, &data)?;
+
+    let cfg = Config { owner: deps.api.addr_validate(&msg.owner)? };
+    CONFIG.save(deps.storage, &cfg)?;
 
     if let Some(marketing) = msg.marketing {
         let logo = if let Some(logo) = marketing.logo {
@@ -166,6 +167,8 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
+        ExecuteMsg::UpdateConfig { owner } =>
+            execute_update_config(deps, env, info, owner),
         ExecuteMsg::Transfer { recipient, amount } => {
             execute_transfer(deps, env, info, recipient, amount)
         }
@@ -204,6 +207,33 @@ pub fn execute(
         } => execute_update_marketing(deps, env, info, project, description, marketing),
         ExecuteMsg::UploadLogo(logo) => execute_upload_logo(deps, env, info, logo),
     }
+}
+
+pub fn execute_update_config(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    new_owner: Option<String>,
+) -> Result<Response, ContractError> {
+    // authorized owner
+    let cfg = CONFIG.load(deps.storage)?;
+    if info.sender != cfg.owner {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    let api = deps.api;
+
+    CONFIG.update(deps.storage, |mut existing_config| -> StdResult<_> {
+        // update new owner if set
+        if let Some(addr) = new_owner {
+            existing_config.owner = api.addr_validate(&addr)?;
+        }
+        Ok(existing_config)
+    })?;
+
+    Ok(Response::new()
+        .add_attribute("action", "update_config")
+        .add_attribute("sender", info.sender))
 }
 
 pub fn execute_transfer(
@@ -247,8 +277,8 @@ pub fn execute_burn(
     amount: Uint128,
 ) -> Result<Response, ContractError> {
     // authorized owner
-    let token_info = TOKEN_INFO.load(deps.storage)?;
-    if info.sender != token_info.owner {
+    let cfg = CONFIG.load(deps.storage)?;
+    if info.sender != cfg.owner {
         return Err(ContractError::Unauthorized {});
     }
 
@@ -412,6 +442,7 @@ pub fn execute_upload_logo(
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
+        QueryMsg::Config {} => to_binary(&query_config(deps)?),
         QueryMsg::Balance { address } => to_binary(&query_balance(deps, address)?),
         QueryMsg::TokenInfo {} => to_binary(&query_token_info(deps)?),
         QueryMsg::Allowance { owner, spender } => {
@@ -428,6 +459,10 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::MarketingInfo {} => to_binary(&query_marketing_info(deps)?),
         QueryMsg::DownloadLogo {} => to_binary(&query_download_logo(deps)?),
     }
+}
+
+pub fn query_config(deps: Deps) -> StdResult<Config> {
+    Ok( CONFIG.load(deps.storage)?)
 }
 
 pub fn query_balance(deps: Deps, address: String) -> StdResult<BalanceResponse> {
@@ -470,11 +505,12 @@ pub fn query_download_logo(deps: Deps) -> StdResult<DownloadLogoResponse> {
 
 #[cfg(test)]
 mod tests {
+    use cosmwasm_std::{Addr, coins, CosmosMsg, from_binary, StdError, SubMsg, WasmMsg};
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
-    use cosmwasm_std::{coins, from_binary, Addr, CosmosMsg, StdError, SubMsg, WasmMsg};
+
+    use crate::msg::InstantiateMarketingInfo;
 
     use super::*;
-    use crate::msg::InstantiateMarketingInfo;
 
     fn get_balance<T: Into<String>>(deps: Deps, address: T) -> Uint128 {
         query_balance(deps, address.into()).unwrap().balance

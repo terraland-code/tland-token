@@ -3,6 +3,26 @@
   "title": "ExecuteMsg",
   "oneOf": [
     {
+      "type": "object",
+      "required": [
+        "update_config"
+      ],
+      "properties": {
+        "update_config": {
+          "type": "object",
+          "properties": {
+            "owner": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
       "description": "Transfer is a base message to move tokens to another account without triggering actions",
       "type": "object",
       "required": [
