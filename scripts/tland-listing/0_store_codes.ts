@@ -1,6 +1,6 @@
 import {isTxError, MsgStoreCode, Wallet} from '@terra-money/terra.js';
 import {readFileSync, writeFileSync} from 'fs';
-import {terra, token_owner_wallet} from './keys';
+import {terra, token_owner_wallet, delay} from './keys';
 
 async function StoreCode(wallet: Wallet, codePath: string) {
   const storeCode = new MsgStoreCode(
@@ -30,8 +30,11 @@ async function StoreCode(wallet: Wallet, codePath: string) {
 
 async function StoreCodes() {
   let token_code_id = await StoreCode(token_owner_wallet, "../../artifacts/tland_token.wasm")
+  await delay(10000)
   let staking_code_id = await StoreCode(token_owner_wallet,"../../artifacts/staking.wasm")
+  await delay(10000)
   let airdrop_code_id = await StoreCode(token_owner_wallet,"../../artifacts/airdrop.wasm")
+  await delay(10000)
   let vesting_code_id = await StoreCode(token_owner_wallet,"../../artifacts/vesting.wasm")
 
   let code_ids = {
@@ -51,3 +54,4 @@ StoreCodes()
     console.error(error);
     process.exit(1);
   });
+
