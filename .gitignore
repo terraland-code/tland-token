@@ -23,3 +23,5 @@ artifacts/
 # configuration
 config.json
 *.config.json
+
+.env
