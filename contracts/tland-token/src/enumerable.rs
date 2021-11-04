@@ -78,8 +78,6 @@ mod tests {
                 amount,
             }],
             marketing: None,
-            antibot_protection_trigger_address: "ANTIBOT_TRIGGER".to_string(),
-            antibot_protcetion_burn_address: "ANTIBOT_BURN".to_string()
         };
         let info = mock_info("creator", &[]);
         let env = mock_env();
