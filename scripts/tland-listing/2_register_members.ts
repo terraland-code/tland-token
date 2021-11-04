@@ -1,6 +1,6 @@
 import {isTxError, MsgExecuteContract, Msg, Wallet} from '@terra-money/terra.js';
 import {
-  advisors_owner_wallet,
+  advisors_owner_wallet, airdrop_owner_wallet,
   delay,
   devfund_owner_wallet,
   privsale_owner_wallet, pubsale_owner_wallet,
@@ -29,26 +29,9 @@ let team_members: [AddressAmount] = require('./files/team_members.json')
 let advisors_members: [AddressAmount] = require('./files/advisors_members.json')
 let privsale_members: [AddressAmount] = require('./files/privsale_members.json')
 let pubsale_members: [AddressAmount] = require('./files/pubsale_members.json')
+let airdrop_members_stt: [AddressAmount] = require('./files/stt_and_lp_stakers.json')
 
 let contract_addresses: ContractAddresses = require('./files/contract_addresses.json')
-
-function showDuplicateAddresses(data: AddressAmount[]) {
-  let myMap = new Map();
-  for (let i = 0; i < data.length; i++) {
-    if (myMap.has(data[i].address)) {
-      console.log("repeated: ", data[i].address)
-    }
-    myMap.set(data[i].address, 0)
-  }
-}
-
-function sumAmounts(data: AddressAmount[]) {
-  let amount = 0
-  for (let i = 0; i < data.length; i++) {
-    amount = amount + parseInt(data[i].amount)
-  }
-  console.log(amount)
-}
 
 function SplitToMessages(data: [AddressAmount], wallet: Wallet, constract_address: string) {
   let msgs: object[][] = []
@@ -99,7 +82,7 @@ async function SendBatchMessages(msgs: Msg[], wallet: Wallet, memo: string) {
     if (i%25 == 0 && i>0) {
       const executeTx = await wallet.createAndSignTx({
         msgs: execute_msgs,
-        memo: memo
+        memo: memo + " #" + Math.floor(i/25)
       });
 
       const executeTxResult = await terra.tx.broadcast(executeTx);
@@ -108,10 +91,12 @@ async function SendBatchMessages(msgs: Msg[], wallet: Wallet, memo: string) {
           `execute failed. code: ${executeTxResult.code}, codespace: ${executeTxResult.codespace}, raw_log: ${executeTxResult.raw_log}`
         );
       }
-      console.log("tx_hash: ", executeTxResult.txhash)
+      console.log("memo:", executeTx.memo, "tx_hash: ", executeTxResult.txhash)
 
       // reset execute_msgs
       execute_msgs = []
+
+      delay(10000)
     }
   }
 
@@ -127,7 +112,7 @@ async function SendBatchMessages(msgs: Msg[], wallet: Wallet, memo: string) {
         `execute failed. code: ${executeTxResult.code}, codespace: ${executeTxResult.codespace}, raw_log: ${executeTxResult.raw_log}`
       );
     }
-    console.log("tx_hash: ", executeTxResult.txhash)
+    console.log("memo:", executeTx.memo, "tx_hash: ", executeTxResult.txhash)
   }
 }
 
@@ -152,9 +137,8 @@ async function RegisterMembersForAllContracts() {
   await RegisterMembers(pubsale_members, pubsale_owner_wallet, contract_addresses.pubsale_address,
     "REGISTER PUBLIC SALE ADDRESSES")
   delay(10000)
-
-  // TODO
-  //await RegisterAirdropMembers()
+  await RegisterMembers(airdrop_members_stt, airdrop_owner_wallet, contract_addresses.airdrop_address,
+    "REGISTER AIRDROP ADDRESSES")
 }
 
 RegisterMembersForAllContracts()
