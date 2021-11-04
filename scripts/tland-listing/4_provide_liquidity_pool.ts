@@ -18,32 +18,49 @@ interface ContractAddresses {
 let contract_addresses: ContractAddresses = require('./files/contract_addresses.json')
 let cfg: Config = require('./config/config.json');
 
-async function CreatePair() {
-  const execute = new MsgExecuteContract(
+async function ProvideLiquidity() {
+  const increase_allowance = new MsgExecuteContract(
     lp_owner_wallet.key.accAddress, // sender
-    cfg.terraswap_factory_address, // contract address
+    contract_addresses.token_address, // contract address
     {
-      create_pair: {
-        asset_infos: [
+      increase_allowance: {
+        amount: "1750000000000",
+        spender: contract_addresses.terraswap_pair_address
+      }
+    },
+    undefined
+  )
+
+  const provide_liquidity = new MsgExecuteContract(
+    lp_owner_wallet.key.accAddress, // sender
+    contract_addresses.terraswap_pair_address, // contract address
+    {
+      provide_liquidity: {
+        assets: [
           {
-            token: {
-              contract_addr: contract_addresses.token_address
-            }
+            info: {
+              token: {
+                contract_addr: contract_addresses.token_address
+              }
+            },
+            amount: "1750000000000"
           },
           {
-            native_token: {
-              denom: "uusd"
-            }
+            info: {
+              native_token: {
+                denom: "uusd"
+              }
+            },
+            amount: cfg.ust_liquidity_amount
           }
         ]
       }
     }, // message
-    undefined // coins
+    { uusd: cfg.ust_liquidity_amount } // coins
   );
 
   const executeTx = await lp_owner_wallet.createAndSignTx({
-    msgs: [execute],
-    memo: "CREATE TERRALAND UST PAIR"
+    msgs: [increase_allowance, provide_liquidity]
   });
 
   const executeTxResult = await terra.tx.broadcast(executeTx);
@@ -55,17 +72,9 @@ async function CreatePair() {
       `execute failed. code: ${executeTxResult.code}, codespace: ${executeTxResult.codespace}, raw_log: ${executeTxResult.raw_log}`
     );
   }
-
-  const {wasm: {pair_contract_addr}} = executeTxResult.logs[0].eventsByType;
-  console.log(`pair_contract_address: ${pair_contract_addr}`)
-
-  // add terraswap_pair_address
-  contract_addresses.terraswap_pair_address = pair_contract_addr[0]
-  let jsonData = JSON.stringify(contract_addresses);
-  writeFileSync("files/contract_addresses.json", jsonData);
 }
 
-CreatePair()
+ProvideLiquidity()
   .then(() => process.exit(0))
   .catch((error) => {
     console.error(error);

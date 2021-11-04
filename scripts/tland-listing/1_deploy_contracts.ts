@@ -87,15 +87,15 @@ async function InstantiateToken() {
           address: "terra1ksawlatvhqmm3lg9uc7w6z20zvvuegmwxgjtpm",
           amount: "20000000000000"
         },
-        // Public sale Subme 1 111 555,000000 TLAND
+        // Public sale Subme 1 111 111,120000 TLAND
         {
           address: "terra1wcuvasqx8zf69e9jhnnxgk4em7dnemqappugwj",
-          amount: "1111555000000"
+          amount: "1111111120000"
         },
-        // Public sale Starterra 8 888 445,000000 TLAND
+        // Public sale Starterra 8 888 888,880000 TLAND
         {
           address: "terra1ylng8sxnkghx4grp3auvln6g5ugql7kw29d4h2",
-          amount: "8888445000000"
+          amount: "8888888880000"
         },
         // Development fund 5 000 000 TLAND
         {
