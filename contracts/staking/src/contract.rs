@@ -240,10 +240,12 @@ fn compute_reward_index(cfg: &Config, state: &State, time: u64) -> StdResult<Dec
     }
 
     // global reward index is increased by distributed amount per staked token
-    let res = state.global_reward_index
-        + Decimal::from_ratio(distributed_amount, state.total_stake);
-
-    Ok(res)
+    if state.total_stake.is_zero() {
+        Ok(state.global_reward_index)
+    } else {
+        Ok(state.global_reward_index
+            + Decimal::from_ratio(distributed_amount, state.total_stake))
+    }
 }
 
 fn find_distribution_schedule_range(cfg: &Config, start_time: u64, end_time: u64) -> (i32, i32) {
