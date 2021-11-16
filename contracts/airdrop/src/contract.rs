@@ -238,7 +238,7 @@ fn calc_claim_amount(missions: &Missions, member: &Member) -> StdResult<Uint128>
     // claim amount is amount_earned minus already claimed
     Ok(amount_earned
         .checked_sub(member.claimed)
-        .map_err(StdError::overflow)?)
+        .unwrap_or_default())
 }
 
 pub fn execute_ust_withdraw(
