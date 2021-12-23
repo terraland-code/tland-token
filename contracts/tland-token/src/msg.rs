@@ -170,6 +170,12 @@ pub enum ExecuteMsg {
     },
     /// If set as the "marketing" role on the contract, upload a new URL, SVG, or PNG for the token
     UploadLogo(Logo),
+    /// Withdraw locked funds
+    WithdrawLockedFunds {
+        denom: String,
+        amount: Uint128,
+        recipient: String,
+    }
 }
 
 
