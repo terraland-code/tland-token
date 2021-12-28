@@ -20,6 +20,8 @@ use crate::state::{CONFIG, Config, FeeConfig, Member, MEMBERS, MissionSmartContr
 const CONTRACT_NAME: &str = "crates.io:airdrop";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+const NUM_OF_MISSIONS: u32 = 4;
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
@@ -158,14 +160,17 @@ pub fn execute_register_members(
     let mut new_members: u64 = 0;
     for m in members.iter() {
         let address = deps.api.addr_validate(&m.address)?;
-        let val = Member {
-            amount: m.amount,
-            claimed: m.claimed,
-        };
         if !MEMBERS.has(deps.storage, &address) {
             new_members += 1;
-        }
-        MEMBERS.save(deps.storage, &address, &val)?;
+        };
+        MEMBERS.update(deps.storage, &address, |old| -> StdResult<_> {
+            let mut member = old.unwrap_or_default();
+            member.amount = m.amount;
+            if let Some(claimed) = m.claimed {
+                member.claimed = claimed;
+            }
+            Ok(member)
+        })?;
     }
 
     STATE.update(deps.storage, |mut existing_state| -> StdResult<_> {
@@ -227,13 +232,12 @@ pub fn execute_claim(
 
 fn calc_claim_amount(missions: &Missions, member: &Member) -> StdResult<Uint128> {
     let passed_missions_num = calc_missions_passed(&missions);
-    let max_passed_missions = Uint128::new(5);
 
     // amount earned equals amount multiplied by percentage of passed missions
     let amount_earned = member.amount
         .checked_mul(Uint128::from(passed_missions_num))
         .map_err(StdError::overflow)?
-        .div(max_passed_missions);
+        .div(Uint128::new(NUM_OF_MISSIONS as u128));
 
     // claim amount is amount_earned minus already claimed
     Ok(amount_earned
@@ -415,7 +419,6 @@ fn query_member_list(
 fn check_missions(querier: &QuerierWrapper, cfg: &Config, addr: &Addr) -> StdResult<Missions> {
     let mut missions = Missions {
         is_in_lp_staking: false,
-        is_in_tland_staking: false,
         is_registered_on_platform: false,
         is_property_shareholder: false,
     };
@@ -430,19 +433,6 @@ fn check_missions(querier: &QuerierWrapper, cfg: &Config, addr: &Addr) -> StdRes
         let res: StakingMemberResponse = querier.query(&query)?;
         if res.member.is_some() {
             missions.is_in_lp_staking = true;
-        }
-    }
-
-    if let Some(contract_addr) = cfg.mission_smart_contracts.tland_staking.clone() {
-        let query = WasmQuery::Smart {
-            contract_addr: contract_addr.to_string(),
-            msg: to_binary(&StakingQueryMsg::Member {
-                address: addr.to_string(),
-            })?,
-        }.into();
-        let res: StakingMemberResponse = querier.query(&query)?;
-        if res.member.is_some() {
-            missions.is_in_tland_staking = true;
         }
     }
 
@@ -472,9 +462,6 @@ fn calc_missions_passed(missions: &Missions) -> u32 {
     if missions.is_in_lp_staking {
         passed += 1;
     }
-    if missions.is_in_tland_staking {
-        passed += 1;
-    }
     if missions.is_registered_on_platform {
         passed += 1;
     }
@@ -484,6 +471,3 @@ fn calc_missions_passed(missions: &Missions) -> u32 {
 
     return passed;
 }
-
-#[cfg(test)]
-mod tests {}

@@ -61,7 +61,7 @@ pub enum QueryMsg {
 pub struct RegisterMemberItem {
     pub address: String,
     pub amount: Uint128,
-    pub claimed: Uint128,
+    pub claimed: Option<Uint128>,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
@@ -75,7 +75,6 @@ pub struct MemberResponseItem {
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
 pub struct Missions {
     pub is_in_lp_staking: bool,
-    pub is_in_tland_staking: bool,
     pub is_registered_on_platform: bool,
     pub is_property_shareholder: bool,
 }

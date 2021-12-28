@@ -25,7 +25,7 @@ pub struct FeeConfig {
     pub denom: String,
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+#[derive(Default, Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
 pub struct Member {
     pub amount: Uint128,
     pub claimed: Uint128,
