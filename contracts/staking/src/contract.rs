@@ -305,6 +305,7 @@ pub fn execute_unbond(
     // update member stake
     member_info.stake = member_info.stake.checked_sub(amount).map_err(StdError::overflow)?;
 
+
     // update state with new stake and global_reward_index
     state.total_stake -= amount;
     state.last_updated = env.block.time.seconds();
