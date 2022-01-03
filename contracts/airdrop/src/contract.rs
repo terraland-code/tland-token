@@ -447,7 +447,7 @@ fn check_missions(querier: &QuerierWrapper, cfg: &Config, addr: &Addr) -> StdRes
         if res.is_registered {
             missions.is_registered_on_platform = true;
         }
-        if res.is_property_shareholder {
+        if res.is_property_buyer {
             missions.is_property_shareholder = true;
         }
     }
