@@ -395,19 +395,11 @@ fn query_member_list(
             let (key, m) = item?;
 
             let addr = deps.api.addr_validate(&String::from_utf8(key)?)?;
-            let cfg = CONFIG.load(deps.storage)?;
-
-            let passed_missions = check_missions(&deps.querier, &cfg, &addr)?;
-            let available_to_claim = calc_claim_amount(&passed_missions, &m)?;
 
             Ok(MemberListResponseItem {
                 address: addr.to_string(),
-                info: MemberResponseItem {
-                    amount: m.amount,
-                    available_to_claim,
-                    claimed: m.claimed,
-                    passed_missions,
-                },
+                amount:  m.amount,
+                claimed: m.claimed
             })
         })
         .collect();

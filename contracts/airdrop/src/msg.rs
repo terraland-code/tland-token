@@ -82,7 +82,8 @@ pub struct Missions {
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
 pub struct MemberListResponseItem {
     pub address: String,
-    pub info: MemberResponseItem,
+    pub amount: Uint128,
+    pub claimed: Uint128,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
