@@ -20,6 +20,8 @@ use crate::state::{CONFIG, Config, FeeConfig, Member, MEMBERS, MissionSmartContr
 const CONTRACT_NAME: &str = "crates.io:airdrop";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+const NUM_OF_MISSIONS: u32 = 4;
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
@@ -89,6 +91,8 @@ pub fn execute(
             execute_update_config(deps, env, info, owner, fee_config, mission_smart_contracts),
         ExecuteMsg::RegisterMembers(members) =>
             execute_register_members(deps, env, info, members),
+        ExecuteMsg::RemoveMembers(addresses) =>
+            execute_remove_members(deps, env, info, addresses),
         ExecuteMsg::Claim {} => execute_claim(deps, env, info),
         ExecuteMsg::UstWithdraw { recipient, amount } =>
             execute_ust_withdraw(deps, env, info, recipient, amount),
@@ -158,14 +162,17 @@ pub fn execute_register_members(
     let mut new_members: u64 = 0;
     for m in members.iter() {
         let address = deps.api.addr_validate(&m.address)?;
-        let val = Member {
-            amount: m.amount,
-            claimed: m.claimed,
-        };
         if !MEMBERS.has(deps.storage, &address) {
             new_members += 1;
-        }
-        MEMBERS.save(deps.storage, &address, &val)?;
+        };
+        MEMBERS.update(deps.storage, &address, |old| -> StdResult<_> {
+            let mut member = old.unwrap_or_default();
+            member.amount = m.amount;
+            if let Some(claimed) = m.claimed {
+                member.claimed = claimed;
+            }
+            Ok(member)
+        })?;
     }
 
     STATE.update(deps.storage, |mut existing_state| -> StdResult<_> {
@@ -175,6 +182,37 @@ pub fn execute_register_members(
 
     Ok(Response::new()
         .add_attribute("action", "register_member")
+        .add_attribute("sender", info.sender))
+}
+
+pub fn execute_remove_members(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    addresses: Vec<String>,
+) -> Result<Response, ContractError> {
+    // authorized owner
+    let cfg = CONFIG.load(deps.storage)?;
+    if info.sender != cfg.owner {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    let mut removed: u64 = 0;
+    for address in addresses.iter() {
+        let addr = deps.api.addr_validate(address)?;
+        if MEMBERS.has(deps.storage, &addr) {
+            removed += 1;
+        };
+        MEMBERS.remove(deps.storage, &addr);
+    }
+
+    STATE.update(deps.storage, |mut existing_state| -> StdResult<_> {
+        existing_state.num_of_members -= removed;
+        Ok(existing_state)
+    })?;
+
+    Ok(Response::new()
+        .add_attribute("action", "remove_members")
         .add_attribute("sender", info.sender))
 }
 
@@ -227,13 +265,12 @@ pub fn execute_claim(
 
 fn calc_claim_amount(missions: &Missions, member: &Member) -> StdResult<Uint128> {
     let passed_missions_num = calc_missions_passed(&missions);
-    let max_passed_missions = Uint128::new(5);
 
     // amount earned equals amount multiplied by percentage of passed missions
     let amount_earned = member.amount
         .checked_mul(Uint128::from(passed_missions_num))
         .map_err(StdError::overflow)?
-        .div(max_passed_missions);
+        .div(Uint128::new(NUM_OF_MISSIONS as u128));
 
     // claim amount is amount_earned minus already claimed
     Ok(amount_earned
@@ -391,19 +428,11 @@ fn query_member_list(
             let (key, m) = item?;
 
             let addr = deps.api.addr_validate(&String::from_utf8(key)?)?;
-            let cfg = CONFIG.load(deps.storage)?;
-
-            let passed_missions = check_missions(&deps.querier, &cfg, &addr)?;
-            let available_to_claim = calc_claim_amount(&passed_missions, &m)?;
 
             Ok(MemberListResponseItem {
                 address: addr.to_string(),
-                info: MemberResponseItem {
-                    amount: m.amount,
-                    available_to_claim,
-                    claimed: m.claimed,
-                    passed_missions,
-                },
+                amount:  m.amount,
+                claimed: m.claimed
             })
         })
         .collect();
@@ -415,7 +444,6 @@ fn query_member_list(
 fn check_missions(querier: &QuerierWrapper, cfg: &Config, addr: &Addr) -> StdResult<Missions> {
     let mut missions = Missions {
         is_in_lp_staking: false,
-        is_in_tland_staking: false,
         is_registered_on_platform: false,
         is_property_shareholder: false,
     };
@@ -433,19 +461,6 @@ fn check_missions(querier: &QuerierWrapper, cfg: &Config, addr: &Addr) -> StdRes
         }
     }
 
-    if let Some(contract_addr) = cfg.mission_smart_contracts.tland_staking.clone() {
-        let query = WasmQuery::Smart {
-            contract_addr: contract_addr.to_string(),
-            msg: to_binary(&StakingQueryMsg::Member {
-                address: addr.to_string(),
-            })?,
-        }.into();
-        let res: StakingMemberResponse = querier.query(&query)?;
-        if res.member.is_some() {
-            missions.is_in_tland_staking = true;
-        }
-    }
-
     if let Some(contract_addr) = cfg.mission_smart_contracts.platform_registry.clone() {
         let query = WasmQuery::Smart {
             contract_addr: contract_addr.to_string(),
@@ -457,7 +472,7 @@ fn check_missions(querier: &QuerierWrapper, cfg: &Config, addr: &Addr) -> StdRes
         if res.is_registered {
             missions.is_registered_on_platform = true;
         }
-        if res.is_property_shareholder {
+        if res.is_property_buyer {
             missions.is_property_shareholder = true;
         }
     }
@@ -472,9 +487,6 @@ fn calc_missions_passed(missions: &Missions) -> u32 {
     if missions.is_in_lp_staking {
         passed += 1;
     }
-    if missions.is_in_tland_staking {
-        passed += 1;
-    }
     if missions.is_registered_on_platform {
         passed += 1;
     }
@@ -484,6 +496,3 @@ fn calc_missions_passed(missions: &Missions) -> u32 {
 
     return passed;
 }
-
-#[cfg(test)]
-mod tests {}
