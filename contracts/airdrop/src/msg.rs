@@ -30,6 +30,9 @@ pub enum ExecuteMsg {
     RegisterMembers (
         Vec<RegisterMemberItem>
     ),
+    RemoveMembers (
+        Vec<String>
+    ),
     UstWithdraw {
         recipient: String,
         amount: Uint128

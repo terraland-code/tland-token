@@ -91,6 +91,8 @@ pub fn execute(
             execute_update_config(deps, env, info, owner, fee_config, mission_smart_contracts),
         ExecuteMsg::RegisterMembers(members) =>
             execute_register_members(deps, env, info, members),
+        ExecuteMsg::RemoveMembers(addresses) =>
+            execute_remove_members(deps, env, info, addresses),
         ExecuteMsg::Claim {} => execute_claim(deps, env, info),
         ExecuteMsg::UstWithdraw { recipient, amount } =>
             execute_ust_withdraw(deps, env, info, recipient, amount),
@@ -180,6 +182,37 @@ pub fn execute_register_members(
 
     Ok(Response::new()
         .add_attribute("action", "register_member")
+        .add_attribute("sender", info.sender))
+}
+
+pub fn execute_remove_members(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    addresses: Vec<String>,
+) -> Result<Response, ContractError> {
+    // authorized owner
+    let cfg = CONFIG.load(deps.storage)?;
+    if info.sender != cfg.owner {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    let mut removed: u64 = 0;
+    for address in addresses.iter() {
+        let addr = deps.api.addr_validate(address)?;
+        if MEMBERS.has(deps.storage, &addr) {
+            removed += 1;
+        };
+        MEMBERS.remove(deps.storage, &addr);
+    }
+
+    STATE.update(deps.storage, |mut existing_state| -> StdResult<_> {
+        existing_state.num_of_members -= removed;
+        Ok(existing_state)
+    })?;
+
+    Ok(Response::new()
+        .add_attribute("action", "remove_members")
         .add_attribute("sender", info.sender))
 }
 
