@@ -302,11 +302,91 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "description": "Withdraw locked funds",
+      "type": "object",
+      "required": [
+        "withdraw_locked_funds"
+      ],
+      "properties": {
+        "withdraw_locked_funds": {
+          "type": "object",
+          "required": [
+            "amount",
+            "denom",
+            "recipient"
+          ],
+          "properties": {
+            "amount": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "denom": {
+              "type": "string"
+            },
+            "recipient": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Setting fee configuration",
+      "type": "object",
+      "required": [
+        "update_swap_fee_config"
+      ],
+      "properties": {
+        "update_swap_fee_config": {
+          "type": "object",
+          "properties": {
+            "enable_swap_fee": {
+              "description": "Setting fee flag",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "fee_admin": {
+              "description": "The address (if any) who can update this data structure",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "fee_receiver": {
+              "description": "The address who receives all fee amounts",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "swap_percent_fee": {
+              "description": "The percent amount of the fee",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Decimal"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "additionalProperties": false
     }
   ],
   "definitions": {
     "Binary": {
       "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>",
+      "type": "string"
+    },
+    "Decimal": {
+      "description": "A fixed-point decimal value with 18 fractional digits, i.e. Decimal(1_000_000_000_000_000_000) == 1.0\n\nThe greatest possible value that can be represented is 340282366920938463463.374607431768211455 (which is (2^128 - 1) / 10^18)",
       "type": "string"
     },
     "EmbeddedLogo": {

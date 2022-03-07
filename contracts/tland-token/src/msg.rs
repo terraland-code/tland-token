@@ -1,25 +1,26 @@
-use cosmwasm_std::{StdError, StdResult, Uint128, Binary};
+use cosmwasm_std::{StdError, StdResult, Uint128, Binary, Decimal};
 use cw20::{Cw20Coin, Logo};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use cw0::Expiration;
-
-#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
-pub struct InstantiateMarketingInfo {
-    pub project: Option<String>,
-    pub description: Option<String>,
-    pub marketing: Option<String>,
-    pub logo: Option<Logo>,
-}
+use cw20_base::msg::InstantiateMarketingInfo;
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
 pub struct InstantiateMsg {
+    /// Token owner used to withdraw locked funds
     pub owner: String,
+    /// Token name
     pub name: String,
+    /// Token symbol
     pub symbol: String,
+    /// The amount of decimals the token has
     pub decimals: u8,
+    /// Initial token balances
     pub initial_balances: Vec<Cw20Coin>,
+    /// Marketing info
     pub marketing: Option<InstantiateMarketingInfo>,
+    /// Swap fee configuration
+    pub swap_fee_config: Option<SwapFeeConfigResponse>,
 }
 
 impl InstantiateMsg {
@@ -102,6 +103,8 @@ pub enum QueryMsg {
     /// contract.
     /// Return type: DownloadLogoResponse.
     DownloadLogo {},
+    /// Returns swap fee configuration
+    SwapFeeConfig {}
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -175,8 +178,26 @@ pub enum ExecuteMsg {
         denom: String,
         amount: Uint128,
         recipient: String,
+    },
+    /// Setting fee configuration
+    UpdateSwapFeeConfig {
+        /// The address (if any) who can update this data structure
+        fee_admin: Option<String>,
+        /// Setting fee flag
+        enable_swap_fee: Option<bool>,
+        /// The percent amount of the fee
+        swap_percent_fee: Option<Decimal>,
+        /// The address who receives all fee amounts
+        fee_receiver: Option<String>,
     }
 }
 
+#[derive(Default, Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+pub struct SwapFeeConfigResponse {
+    pub fee_admin: String,
+    pub enable_swap_fee: bool,
+    pub swap_percent_fee: Decimal,
+    pub fee_receiver: String,
+}
 
 

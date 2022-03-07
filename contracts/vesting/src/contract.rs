@@ -323,11 +323,11 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
 }
 
 pub fn query_config(deps: Deps) -> StdResult<Config> {
-    Ok(CONFIG.load(deps.storage)?)
+    CONFIG.load(deps.storage)
 }
 
 pub fn query_state(deps: Deps) -> StdResult<State> {
-    Ok(STATE.load(deps.storage)?)
+    STATE.load(deps.storage)
 }
 
 pub fn query_member(deps: Deps, addr: String, time: u64) -> StdResult<MemberResponse> {

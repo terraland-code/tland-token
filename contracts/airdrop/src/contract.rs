@@ -47,9 +47,9 @@ pub fn instantiate(
 fn mission_smart_contracts_from(deps: &DepsMut, m: Option<InstantiateMissionSmartContracts>) -> StdResult<MissionSmartContracts> {
     let res = match m {
         Some(m) => MissionSmartContracts {
-            lp_staking: option_addr_validate(&deps, &m.lp_staking)?,
-            tland_staking: option_addr_validate(&deps, &m.tland_staking)?,
-            platform_registry: option_addr_validate(&deps, &m.platform_registry)?,
+            lp_staking: option_addr_validate(deps, &m.lp_staking)?,
+            tland_staking: option_addr_validate(deps, &m.tland_staking)?,
+            platform_registry: option_addr_validate(deps, &m.platform_registry)?,
         },
         None => MissionSmartContracts {
             lp_staking: None,
@@ -62,7 +62,7 @@ fn mission_smart_contracts_from(deps: &DepsMut, m: Option<InstantiateMissionSmar
 
 fn option_addr_validate(deps: &DepsMut, value: &Option<String>) -> StdResult<Option<Addr>> {
     let v = match value {
-        Some(str) => Some(deps.api.addr_validate(&str)?),
+        Some(str) => Some(deps.api.addr_validate(str)?),
         None => None,
     };
     Ok(v)
@@ -264,7 +264,7 @@ pub fn execute_claim(
 }
 
 fn calc_claim_amount(missions: &Missions, member: &Member) -> StdResult<Uint128> {
-    let passed_missions_num = calc_missions_passed(&missions);
+    let passed_missions_num = calc_missions_passed(missions);
 
     // amount earned equals amount multiplied by percentage of passed missions
     let amount_earned = member.amount
@@ -378,11 +378,11 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
 }
 
 pub fn query_config(deps: Deps) -> StdResult<Config> {
-    Ok(CONFIG.load(deps.storage)?)
+    CONFIG.load(deps.storage)
 }
 
 pub fn query_state(deps: Deps) -> StdResult<State> {
-    Ok(STATE.load(deps.storage)?)
+    STATE.load(deps.storage)
 }
 
 pub fn query_member(deps: Deps, addr: String) -> StdResult<MemberResponse> {
@@ -494,5 +494,5 @@ fn calc_missions_passed(missions: &Missions) -> u32 {
         passed += 1;
     }
 
-    return passed;
+    passed
 }

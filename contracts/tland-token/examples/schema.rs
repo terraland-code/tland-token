@@ -7,7 +7,7 @@ use cw20::{
     AllAccountsResponse, AllAllowancesResponse, AllowanceResponse, BalanceResponse,
     TokenInfoResponse,
 };
-use tland_token::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, MigrateMsg};
+use tland_token::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, MigrateMsg, SwapFeeConfigResponse};
 use tland_token::state::Config as ConfigResponse;
 
 fn main() {
@@ -27,4 +27,5 @@ fn main() {
     export_schema(&schema_for!(AllAllowancesResponse), &out_dir);
     export_schema(&schema_for!(AllAccountsResponse), &out_dir);
     export_schema(&schema_for!(ConfigResponse), &out_dir);
+    export_schema(&schema_for!(SwapFeeConfigResponse), &out_dir);
 }

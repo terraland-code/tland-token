@@ -162,6 +162,19 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "description": "Returns swap fee configuration",
+      "type": "object",
+      "required": [
+        "swap_fee_config"
+      ],
+      "properties": {
+        "swap_fee_config": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
     }
   ]
 }

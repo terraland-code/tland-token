@@ -270,6 +270,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "cw20-base"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b731a291b63cc26d484b159e8469f0965b0082a20e874616f869537b31d64bb"
+dependencies = [
+ "cosmwasm-std",
+ "cw-storage-plus 0.9.1",
+ "cw0 0.9.1",
+ "cw2 0.9.1",
+ "cw20 0.9.1",
+ "schemars",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "cw4"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -667,6 +683,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "terraswap"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96f2c2a6371e9ddf2c942368e64645cc3e8fc2855da70c8c6bed238dcdd5522f"
+dependencies = [
+ "cosmwasm-std",
+ "cosmwasm-storage",
+ "cw20 0.8.1",
+ "schemars",
+ "serde",
+ "terra-cosmwasm",
+]
+
+[[package]]
 name = "thiserror"
 version = "1.0.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -688,7 +718,7 @@ dependencies = [
 
 [[package]]
 name = "tland-token"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "cosmwasm-schema",
  "cosmwasm-std",
@@ -696,9 +726,11 @@ dependencies = [
  "cw0 0.9.1",
  "cw2 0.9.1",
  "cw20 0.9.1",
+ "cw20-base",
  "schemars",
  "serde",
  "terra-cosmwasm",
+ "terraswap",
  "thiserror",
 ]
 
