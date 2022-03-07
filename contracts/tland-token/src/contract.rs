@@ -176,8 +176,8 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::UpdateConfig { owner } =>
-            execute_update_config(deps, env, info, owner),
+        ExecuteMsg::UpdateConfig { owner, reset_swap_fee_config } =>
+            execute_update_config(deps, env, info, owner, reset_swap_fee_config),
         ExecuteMsg::Transfer { recipient, amount } => {
             cw20_execute_transfer(deps, env, info, recipient, amount)
         }
@@ -234,22 +234,22 @@ pub fn execute_update_config(
     _env: Env,
     info: MessageInfo,
     new_owner: Option<String>,
+    reset_swap_fee_config: Option<SwapFeeConfig>,
 ) -> Result<Response, ContractError> {
     // authorized owner
-    let cfg = CONFIG.load(deps.storage)?;
+    let mut cfg = CONFIG.load(deps.storage)?;
     if info.sender != cfg.owner {
         return Err(ContractError::Unauthorized {});
     }
 
-    let api = deps.api;
+    if let Some(owner) = new_owner {
+        cfg.owner = deps.api.addr_validate(&owner)?;
+    }
+    CONFIG.save(deps.storage, &cfg)?;
 
-    CONFIG.update(deps.storage, |mut existing_config| -> StdResult<_> {
-        // update new owner if set
-        if let Some(addr) = new_owner {
-            existing_config.owner = api.addr_validate(&addr)?;
-        }
-        Ok(existing_config)
-    })?;
+    if let Some(reset_swap_fee_config) = reset_swap_fee_config {
+        SWAP_FEE_CONFIG.save(deps.storage, &reset_swap_fee_config)?;
+    }
 
     Ok(Response::new()
         .add_attribute("action", "update_config")

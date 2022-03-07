@@ -4,6 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use cw0::Expiration;
 use cw20_base::msg::InstantiateMarketingInfo;
+use crate::state::SwapFeeConfig;
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
 pub struct InstantiateMsg {
@@ -115,6 +116,7 @@ pub struct MigrateMsg {}
 pub enum ExecuteMsg {
     UpdateConfig {
         owner: Option<String>,
+        reset_swap_fee_config: Option<SwapFeeConfig>,
     },
     /// Transfer is a base message to move tokens to another account without triggering actions
     Transfer { recipient: String, amount: Uint128 },
